@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "clawrbonite",
+  "project_id": "52509d75-9da0-4158-93ff-13b1250729aa"
+}
