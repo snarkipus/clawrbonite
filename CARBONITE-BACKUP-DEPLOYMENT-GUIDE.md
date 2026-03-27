@@ -6,9 +6,10 @@
 ## Overview
 
 Carbonite is a git-based backup system for the ephemeral OpenClaw sandbox. It
-preserves OpenClaw state (agent config, sessions, identity, workspace, cron jobs,
-custom scripts) across the frequent tear-down/rebuild cycles driven by alpha-era
-NemoClaw and OpenShell commit velocity.
+preserves continuity-critical OpenClaw state (agent runtime state, sessions,
+workspace, memory, cron jobs, and sandbox helper customizations) across the
+frequent tear-down/rebuild cycles driven by alpha-era NemoClaw and OpenShell
+commit velocity.
 
 Carbonite does **NOT** protect against pod restarts transparently — after a
 rebuild, you restore from the last backup into a clean sandbox.
@@ -19,6 +20,7 @@ rebuild, you restore from the last backup into a clean sandbox.
 - Rebuilds are frequent (near-daily during alpha)
 - Host-side patches (fetch-guard, openclaw.json, network policy) are outside
   Carbonite's scope — those require Priority 2 (custom image) to persist
+- Some re-pairing or host-side reattachment may still be required after restore
 - PAT-based auth is expedient for alpha; rotate regularly
 
 ### Bundle Architecture
@@ -53,21 +55,28 @@ RESTORE (thaw):
 
 ## What's Backed Up
 
-- `.openclaw/agents/` — agent config, models.json, sessions (continuity)
-- `.openclaw/workspace/` — SOUL.md, AGENTS.md, IDENTITY.md, USER.md, etc.
-- `.openclaw-data/workspace/` — same (may be symlinked to above)
-- `.openclaw/cron/` — scheduled job definitions
-- `~/bin/` — custom scripts (websearch, carbonite-backup, carbonite-bundle)
-- `.bashrc`, `.profile` — shell customizations
+- `.openclaw-data/agents/` — agent runtime state, `models.json`, sessions,
+  `sessions.json`
+- `.openclaw-data/workspace/` — SOUL.md, AGENTS.md, IDENTITY.md, USER.md,
+  MEMORY.md, daily memory notes, and other user-authored workspace files
+- `.openclaw-data/cron/` — scheduled job definitions and run history
+- `.openclaw/memory/` — primary SQLite memory databases (not WAL/SHM sidecars)
+- `~/carbonite/` — sandbox Carbonite scripts and helper tools, including
+  `~/carbonite/bin/`
+- `.bashrc`, `.profile`, `.gitconfig` — intentional shell and git customizations
 - `.carbonite.bundle` files — frozen snapshots of nested git repo state
 
 ## What's Excluded
 
 - All nested `.git` directories (archived as `.carbonite.bundle` instead)
 - Credentials (`.git-credentials`, `identity/`, `auth-profiles.json`)
+- Device/pairing state (`.openclaw-data/devices/`, `.openclaw-data/identity/`)
+- Bootstrap/runtime config (`.nemoclaw/`, `.openclaw/openclaw.json`,
+  `.openclaw/.config-hash`)
 - Shell history (`.bash_history`)
 - npm packages (`.npm-global/`, `node_modules/`)
 - Caches (`.openclaw/cache/`, `completions/`, `snapshots/`)
+- Update bookkeeping (`.openclaw-data/update-check.json`)
 - Skills from clawhub (`skills/` — reproducible via `clawhub install`)
 - Chromium / browser artifacts
 - Carbonite lock file (`.carbonite.lock`)
@@ -79,8 +88,8 @@ RESTORE (thaw):
 ### Step 1: Upload scripts to sandbox
 
 ```bash
-openshell sandbox upload my-assistant ./carbonite-init.sh ~/carbonite-init.sh
-openshell sandbox upload my-assistant ./carbonite-cron-setup.sh ~/carbonite-cron-setup.sh
+openshell sandbox upload my-assistant ./scripts/carbonite-init.sh /sandbox/carbonite/carbonite-init.sh
+openshell sandbox upload my-assistant ./scripts/carbonite-cron-setup.sh /sandbox/carbonite/carbonite-cron-setup.sh
 ```
 
 ### Step 2: Run initialization
@@ -88,13 +97,20 @@ openshell sandbox upload my-assistant ./carbonite-cron-setup.sh ~/carbonite-cron
 Inside the sandbox (`nemoclaw my-assistant connect`):
 
 ```bash
-GH_PAT=ghp_your_token_here bash ~/carbonite-init.sh
+GH_PAT=ghp_your_token_here bash ~/carbonite/carbonite-init.sh
+```
+
+Disposable validation against a scratch archive repo:
+
+```bash
+CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+  GH_PAT=ghp_your_token_here bash ~/carbonite/carbonite-init.sh
 ```
 
 ### Step 3: Set up scheduled backups
 
 ```bash
-bash ~/carbonite-cron-setup.sh
+bash ~/carbonite/carbonite-cron-setup.sh
 ```
 
 ### Step 4: Verify
@@ -118,14 +134,27 @@ openclaw cron list                   # check cron registration
 GH_PAT=ghp_xxx bash carbonite-restore.sh my-assistant
 ```
 
+Use the same override if restoring from a scratch archive:
+
+```bash
+CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+  GH_PAT=ghp_xxx bash carbonite-restore.sh my-assistant
+```
+
 ### Inside the new sandbox:
 
 ```bash
+# Extract the uploaded restore archive into sandbox home
+tar -xf ~/carbonite-restore.tar -C ~
+
 # Re-init with history preservation + thaw + validation
-GH_PAT=ghp_xxx bash ~/carbonite-init.sh --continue
+GH_PAT=ghp_xxx bash ~/carbonite/carbonite-init.sh --continue
 
 # Re-register cron job (idempotent — safe to re-run)
-bash ~/carbonite-cron-setup.sh
+bash ~/carbonite/carbonite-cron-setup.sh
+
+# Recreate excluded env template if needed
+bash ~/carbonite/bin/env-setup
 
 # Verify
 carbonite-bundle status
@@ -185,10 +214,11 @@ carbonite-bundle thaw                    # restore .git dirs from bundles
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `carbonite-init.sh` | `~/` (uploaded) | One-time setup or `--continue` after restore |
-| `carbonite-backup` | `~/bin/` (installed by init) | Incremental backup with auto-freeze + lock |
-| `carbonite-bundle` | `~/bin/` (installed by init) | Freeze/thaw nested git repos |
-| `carbonite-cron-setup.sh` | `~/` (uploaded) | Register scheduled backup (idempotent) |
+| `carbonite/carbonite-init.sh` | `~/carbonite/` | One-time setup or `--continue` after restore |
+| `carbonite/carbonite-cron-setup.sh` | `~/carbonite/` | Register scheduled backup during fresh setup or after restore |
+| `carbonite/bin/carbonite-backup` | `~/carbonite/bin/` | Incremental backup with auto-freeze + lock |
+| `carbonite/bin/carbonite-bundle` | `~/carbonite/bin/` | Freeze/thaw nested git repos |
+| `carbonite/bin/env-setup` | `~/carbonite/bin/` | Recreate excluded `~/.env` template after rebuild |
 | `carbonite-restore.sh` | Host only | Restore sandbox from GitHub backup |
 | `.gitignore` | `~/` (written by init) | Exclusion rules |
 | `.carbonite.bundle` | Next to each nested `.git` | Frozen git repo snapshot |

@@ -10,8 +10,13 @@ minimal diffs; most changes affect scripts that may run on a host or sandbox.
 - `scripts/carbonite-init.sh` - initialize Carbonite inside a sandbox
 - `scripts/carbonite-restore.sh` - restore backup contents from host to sandbox
 - `scripts/carbonite-cron-setup.sh` - register the recurring backup cron job
+- `scripts/carbonite-backup.sh` - create incremental backups in the archive repo
+- `scripts/carbonite-bundle.sh` - freeze/thaw nested git repos as bundle files
+- `scripts/env-setup.sh` - recreate excluded environment template content
 - `CARBONITE-BACKUP-DEPLOYMENT-GUIDE.md` - operational assumptions and flows
-- `README.md` - currently empty
+- `docs/decisions/` - durable repo-boundary and archive-contract decisions
+- `docs/plans/` - implementation plans and design notes
+- `README.md` - repo overview and key entry points
 
 ## Source Of Truth
 Prefer current script behavior and `CARBONITE-BACKUP-DEPLOYMENT-GUIDE.md` over

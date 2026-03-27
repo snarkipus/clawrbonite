@@ -10,22 +10,32 @@
 # This script:
 #   1. Configures git identity & credentials
 #   2. Creates .gitignore tuned for OpenClaw sandbox
-#   3. Installs carbonite-bundle, carbonite-backup helper scripts to ~/bin/
+#   3. Installs carbonite-bundle, carbonite-backup helper scripts to ~/carbonite/bin/
 #   4. Freezes nested git repos into .bundle files (git bundle)
 #   5. Initializes Carbonite repo at /sandbox (HOME)
-#   6. Pushes to github.com/snarkipus/carbonite
+#   6. Pushes to the configured Carbonite archive repo
 #
 # Usage:
 #   GH_PAT=ghp_xxx bash carbonite-init.sh              # fresh start (force-push)
 #   GH_PAT=ghp_xxx bash carbonite-init.sh --continue    # after restore (preserves history)
+#   CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+#     GH_PAT=ghp_xxx bash carbonite-init.sh             # disposable validation target
 #   bash carbonite-init.sh                               # will prompt for PAT
 # =============================================================================
 
 set -euo pipefail
 
-REPO_URL="https://github.com/snarkipus/carbonite.git"
-REPO_NAME="snarkipus/carbonite"
+DEFAULT_REPO_URL="https://github.com/snarkipus/carbonite.git"
+DEFAULT_REPO_NAME="snarkipus/carbonite"
+REPO_URL="${CARBONITE_REPO_URL:-$DEFAULT_REPO_URL}"
+REPO_NAME="${CARBONITE_REPO_NAME:-${REPO_URL#https://github.com/}}"
+REPO_NAME="${REPO_NAME%.git}"
+if [ -z "$REPO_NAME" ]; then
+  REPO_NAME="$DEFAULT_REPO_NAME"
+fi
 CONTINUE_MODE=false
+CARBONITE_HOME="$HOME/carbonite"
+CARBONITE_BIN_DIR="$CARBONITE_HOME/bin"
 
 # Parse flags
 for arg in "$@"; do
@@ -39,6 +49,15 @@ echo "==> Configuring git identity..."
 git config --global user.name "snarkipus"
 git config --global user.email "snarkipus@users.noreply.github.com"
 git config --global init.defaultBranch main
+
+# Some sandbox images ship CA bundles that curl can use, but git does not pick
+# up automatically. Point git at the standard bundle/dir explicitly when present.
+if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+  git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
+fi
+if [ -d /etc/ssl/certs ]; then
+  git config --global http.sslCAPath /etc/ssl/certs
+fi
 
 # ── GitHub PAT ──────────────────────────────────────────────────────────────
 if [ -z "${GH_PAT:-}" ]; then
@@ -67,7 +86,22 @@ cat > ~/.gitignore << 'GITIGNORE'
 # ── Secrets & credentials (NEVER track) ─────────────────────────────────────
 .git-credentials
 .openclaw/identity/
+.openclaw-data/identity/
+.openclaw-data/devices/
 .openclaw/agents/*/agent/auth-profiles.json
+.openclaw-data/agents/*/agent/auth-profiles.json
+
+# ── Bootstrap/runtime config (recreated, not preserved) ────────────────────
+.nemoclaw/
+.openclaw/openclaw.json
+.openclaw/openclaw.json.bak
+.openclaw/openclaw.json.bak.*
+.openclaw/.config-hash
+
+# ── OpenClaw facade tree (capture canonical .openclaw-data instead) ─────────
+.openclaw/*
+!.openclaw/memory/
+!.openclaw/memory/*.sqlite
 
 # ── Shell history (noise, potential secret leakage) ─────────────────────────
 .bash_history
@@ -84,6 +118,9 @@ cat > ~/.gitignore << 'GITIGNORE'
 .openclaw/cache/
 .openclaw/snapshots/
 .openclaw/completions/
+.openclaw/logs/
+.openclaw-data/update-check.json
+.openclaw/update-check.json
 .openclaw/memory/*.wal
 .openclaw/memory/*.sqlite-wal
 .openclaw/memory/*.sqlite-shm
@@ -121,12 +158,48 @@ Thumbs.db
 **/.git.frozen
 GITIGNORE
 
+stage_preserved_paths() {
+  local path
+  for path in \
+    ".openclaw-data/agents" \
+    ".openclaw-data/workspace" \
+    ".openclaw-data/cron" \
+    ".openclaw/memory" \
+    "carbonite" \
+    ".bashrc" \
+    ".profile" \
+    ".gitconfig" \
+    ".gitignore"
+  do
+    [ -e "$path" ] || continue
+    git add -A -- "$path"
+  done
+}
+
+drop_excluded_paths() {
+  git rm -r --cached --ignore-unmatch -- \
+    ".nemoclaw" \
+    ".openclaw/openclaw.json" \
+    ".openclaw/openclaw.json.bak" \
+    ".openclaw/openclaw.json.bak.*" \
+    ".openclaw/.config-hash" \
+    ".openclaw/identity" \
+    ".openclaw-data/identity" \
+    ".openclaw-data/devices" \
+    ".openclaw/logs" \
+    ".openclaw-data/update-check.json" \
+    ".openclaw/update-check.json" \
+    ".openclaw/agents/*/agent/auth-profiles.json" \
+    ".openclaw-data/agents/*/agent/auth-profiles.json" \
+    ".git-credentials"
+}
+
 # ── Install helper scripts ─────────────────────────────────────────────────
-echo "==> Installing helper scripts to ~/bin/..."
-mkdir -p ~/bin
+echo "==> Installing helper scripts to ~/carbonite/bin/..."
+mkdir -p "$CARBONITE_BIN_DIR"
 
 # ── carbonite-bundle: freeze/thaw nested git repos ─────────────────────────
-cat > ~/bin/carbonite-bundle << 'BUNDLE_SCRIPT'
+cat > "$CARBONITE_BIN_DIR/carbonite-bundle" << 'BUNDLE_SCRIPT'
 #!/bin/bash
 # =============================================================================
 # carbonite-bundle — Freeze/thaw nested git repos for Carbonite backup
@@ -324,10 +397,10 @@ case "$ACTION" in
     ;;
 esac
 BUNDLE_SCRIPT
-chmod +x ~/bin/carbonite-bundle
+chmod +x "$CARBONITE_BIN_DIR/carbonite-bundle"
 
 # ── carbonite-backup: incremental backup with auto-freeze ───────────────────
-cat > ~/bin/carbonite-backup << 'BACKUP_SCRIPT'
+cat > "$CARBONITE_BIN_DIR/carbonite-backup" << 'BACKUP_SCRIPT'
 #!/bin/bash
 # =============================================================================
 # carbonite-backup — Incremental git backup of sandbox state
@@ -357,11 +430,48 @@ cd ~
 
 MSG="${1:-carbonite: scheduled backup $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
+stage_preserved_paths() {
+  local path
+  for path in \
+    ".openclaw-data/agents" \
+    ".openclaw-data/workspace" \
+    ".openclaw-data/cron" \
+    ".openclaw/memory" \
+    "carbonite" \
+    ".bashrc" \
+    ".profile" \
+    ".gitconfig" \
+    ".gitignore"
+  do
+    [ -e "$path" ] || continue
+    git add -A -- "$path"
+  done
+}
+
+drop_excluded_paths() {
+  git rm -r --cached --ignore-unmatch -- \
+    ".nemoclaw" \
+    ".openclaw/openclaw.json" \
+    ".openclaw/openclaw.json.bak" \
+    ".openclaw/openclaw.json.bak.*" \
+    ".openclaw/.config-hash" \
+    ".openclaw/identity" \
+    ".openclaw-data/identity" \
+    ".openclaw-data/devices" \
+    ".openclaw/logs" \
+    ".openclaw-data/update-check.json" \
+    ".openclaw/update-check.json" \
+    ".openclaw/agents/*/agent/auth-profiles.json" \
+    ".openclaw-data/agents/*/agent/auth-profiles.json" \
+    ".git-credentials"
+}
+
 # Freeze nested git repos into .bundle files
 carbonite-bundle freeze
 
-# Stage everything (respects .gitignore — nested .git dirs are excluded)
-git add -A
+# Stage only the validated continuity paths, then drop tracked exclusions
+stage_preserved_paths
+drop_excluded_paths
 
 # Check if there's anything to commit
 if git diff --cached --quiet; then
@@ -396,11 +506,11 @@ else
   echo "[carbonite] Will retry on next backup run. Manual: git push origin main"
 fi
 BACKUP_SCRIPT
-chmod +x ~/bin/carbonite-backup
+chmod +x "$CARBONITE_BIN_DIR/carbonite-backup"
 
-# Make sure ~/bin is in PATH
-grep -q 'HOME/bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
-export PATH="$HOME/bin:$PATH"
+# Make sure ~/carbonite/bin is in PATH
+grep -q 'HOME/carbonite/bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$HOME/carbonite/bin:$PATH"' >> ~/.bashrc
+export PATH="$HOME/carbonite/bin:$PATH"
 
 # ── Freeze nested repos ────────────────────────────────────────────────────
 echo ""
@@ -434,24 +544,29 @@ if [ "$CONTINUE_MODE" = true ]; then
   # ── Verify restore integrity ──────────────────────────────────────────────
   echo ""
   echo "==> Verifying restore integrity..."
-  MISSING=$(git ls-files --deleted 2>/dev/null | wc -l)
-  MODIFIED=$(git diff --name-only HEAD 2>/dev/null | wc -l)
-  TRACKED=$(git ls-files 2>/dev/null | wc -l)
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    MISSING=$(git ls-files --deleted 2>/dev/null | wc -l)
+    MODIFIED=$(git diff --name-only HEAD 2>/dev/null | wc -l)
+    TRACKED=$(git ls-files 2>/dev/null | wc -l)
 
-  echo "    Tracked files in last backup: ${TRACKED}"
-  echo "    Missing after restore:        ${MISSING}"
-  echo "    Modified after restore:        ${MODIFIED}"
+    echo "    Tracked files in last backup: ${TRACKED}"
+    echo "    Missing after restore:        ${MISSING}"
+    echo "    Modified after restore:       ${MODIFIED}"
 
-  if [ "$MISSING" -gt 0 ]; then
-    echo ""
-    echo "    WARN: Missing files (may be expected if sandbox image differs):"
-    git ls-files --deleted 2>/dev/null | head -20 | sed 's/^/      /'
-    REMAINING=$((MISSING - 20))
-    [ "$REMAINING" -gt 0 ] && echo "      ... and ${REMAINING} more" || true
-  fi
+    if [ "$MISSING" -gt 0 ]; then
+      echo ""
+      echo "    WARN: Missing files (may be expected if sandbox image differs):"
+      git ls-files --deleted 2>/dev/null | head -20 | sed 's/^/      /'
+      REMAINING=$((MISSING - 20))
+      [ "$REMAINING" -gt 0 ] && echo "      ... and ${REMAINING} more" || true
+    fi
 
-  if [ "$MISSING" -eq 0 ] && [ "$MODIFIED" -eq 0 ]; then
-    echo "    ✓ Restore matches last backup exactly."
+    if [ "$MISSING" -eq 0 ] && [ "$MODIFIED" -eq 0 ]; then
+      echo "    ✓ Restore matches last backup exactly."
+    fi
+  else
+    echo "    No existing Carbonite history found."
+    echo "    Continuing with restored filesystem snapshot and fresh top-level repo."
   fi
 
   # ── Thaw bundles back to .git dirs ────────────────────────────────────────
@@ -463,12 +578,17 @@ if [ "$CONTINUE_MODE" = true ]; then
   echo "==> Post-thaw verification..."
   carbonite-bundle status
 
+  # Remove the host-uploaded restore transport archive before staging.
+  # It is only needed to materialize the restored filesystem snapshot.
+  rm -f ~/carbonite-restore.tar
+
   # ── Stage, commit if needed, push ─────────────────────────────────────────
   # Re-freeze after thaw so the .gitignore-excluded .git dirs don't cause
   # issues, and any new .bundle files reflect current state
   carbonite-bundle freeze
 
-  git add -A
+  stage_preserved_paths
+  drop_excluded_paths
   if ! git diff --cached --quiet; then
     git commit -m "carbonite: restored backup ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
   else
@@ -482,7 +602,8 @@ else
     rm -rf .git
   fi
   git init
-  git add -A
+  stage_preserved_paths
+  drop_excluded_paths
   git commit -m "carbonite: initial backup ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 
   echo "==> Force-pushing to ${REPO_NAME} (this will overwrite remote)..."

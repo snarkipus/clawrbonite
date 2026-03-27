@@ -11,12 +11,14 @@
 # uncommitted work.
 #
 # What it does:
-#   1. Clones carbonite repo to a temp directory on the host
-#   2. Uploads contents into the sandbox via openshell sandbox upload
-#   3. Cleans up temp directory
+#   1. Clones the configured carbonite repo to a temp directory on the host
+#   2. Packages the restore tree as a tarball (preserves symlinks/layout)
+#   3. Uploads the tarball into the sandbox via openshell sandbox upload
+#   4. Cleans up temp directory
 #
 # After upload, connect to the sandbox and run:
-#   GH_PAT=ghp_xxx bash ~/carbonite-init.sh --continue
+#   tar -xf ~/carbonite-restore.tar -C ~
+#   GH_PAT=ghp_xxx bash ~/carbonite/carbonite-init.sh --continue
 #
 # Prerequisites:
 #   - Sandbox must be running (openshell sandbox list shows it Ready)
@@ -25,14 +27,20 @@
 #
 # Usage:
 #   GH_PAT=ghp_xxx bash carbonite-restore.sh [sandbox-name]
+#   CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+#     GH_PAT=ghp_xxx bash carbonite-restore.sh my-assistant
 #   bash carbonite-restore.sh my-assistant   (will prompt for PAT)
 # =============================================================================
 
 set -euo pipefail
 
 SANDBOX_NAME="${1:-my-assistant}"
-REPO_URL="https://github.com/snarkipus/carbonite.git"
+DEFAULT_REPO_URL="https://github.com/snarkipus/carbonite.git"
+REPO_URL="${CARBONITE_REPO_URL:-$DEFAULT_REPO_URL}"
 TMPDIR="/tmp/carbonite-restore-$$"
+UPLOAD_DIR="${TMPDIR}/upload"
+ARCHIVE_NAME="carbonite-restore.tar"
+ARCHIVE_PATH="${UPLOAD_DIR}/${ARCHIVE_NAME}"
 
 echo "==> Carbonite Restore"
 echo "    Sandbox: ${SANDBOX_NAME}"
@@ -53,30 +61,31 @@ if [ -z "${GH_PAT:-}" ]; then
   echo
 fi
 
-CLONE_URL="https://snarkipus:${GH_PAT}@github.com/snarkipus/carbonite.git"
+CLONE_URL="${REPO_URL/https:\/\/github.com\//https://snarkipus:${GH_PAT}@github.com/}"
 
 # ── Clone repo ──────────────────────────────────────────────────────────────
 echo "==> Cloning carbonite to ${TMPDIR}..."
-mkdir -p "${TMPDIR}"
+mkdir -p "${TMPDIR}" "${UPLOAD_DIR}"
 git clone --depth 1 "${CLONE_URL}" "${TMPDIR}/carbonite"
 
 # Remove .git directory — Carbonite's own repo state will be re-initialized
 rm -rf "${TMPDIR}/carbonite/.git"
 
+# ── Package restore archive ────────────────────────────────────────────────
+echo "==> Packaging restore archive..."
+tar -cf "${ARCHIVE_PATH}" -C "${TMPDIR}/carbonite" .
+
 # ── Upload to sandbox ──────────────────────────────────────────────────────
 echo "==> Uploading to sandbox '${SANDBOX_NAME}'..."
-echo "    Source: ${TMPDIR}/carbonite/"
-echo "    Dest:   /sandbox/"
+echo "    Source tree: ${TMPDIR}/carbonite/"
+echo "    Archive:     ${ARCHIVE_PATH}"
+echo "    Result:      ${ARCHIVE_NAME} lands at sandbox root (~/)"
 echo ""
 
-cd "${TMPDIR}/carbonite"
-for item in * .[!.]*; do
-  [ -e "$item" ] || continue
-  echo "    Uploading: $item"
-  openshell sandbox upload "${SANDBOX_NAME}" "$item" "/sandbox/$item" 2>/dev/null || {
-    echo "    WARN: Failed to upload $item (may already exist or be read-only)"
-  }
-done
+if ! openshell sandbox upload "${SANDBOX_NAME}" "${UPLOAD_DIR}"; then
+  echo "ERROR: Restore archive upload failed. Sandbox contents may be partial."
+  exit 1
+fi
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 echo ""
@@ -88,16 +97,18 @@ echo "==> Restore complete!"
 echo ""
 echo "==> Next steps (inside sandbox):"
 echo "    1. Connect:  nemoclaw ${SANDBOX_NAME} connect"
-echo "    2. Verify:   ls -la ~/"
-echo "    3. Init:     GH_PAT=ghp_xxx bash ~/carbonite-init.sh --continue"
+echo "    2. Extract:  tar -xf ~/${ARCHIVE_NAME} -C ~/"
+echo "    3. Verify:   ls -la ~/carbonite ~/carbonite/bin"
+echo "    4. Init:     GH_PAT=ghp_xxx bash ~/carbonite/carbonite-init.sh --continue"
 echo ""
 echo "    The --continue flag will:"
 echo "      - Preserve Carbonite git history"
 echo "      - Thaw .carbonite.bundle files back to .git dirs"
 echo "      - Validate restored nested repos"
-echo "      - Install backup & bundle scripts to ~/bin/"
+echo "      - Install backup & bundle scripts to ~/carbonite/bin/"
 echo "      - Re-establish push to GitHub"
 echo ""
-echo "    4. Cron:     bash ~/carbonite-cron-setup.sh"
-echo "    5. Test:     carbonite-backup 'post-restore verification'"
+echo "    5. Cron:     bash ~/carbonite/carbonite-cron-setup.sh"
+echo "    6. Env:      bash ~/carbonite/bin/env-setup    # optional, recreates ~/.env template"
+echo "    7. Test:     carbonite-backup 'post-restore verification'"
 echo ""
