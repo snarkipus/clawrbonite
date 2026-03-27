@@ -18,10 +18,16 @@ rebuild, you restore from the last backup into a clean sandbox.
 
 - Sandbox is disposable — restore targets a **clean post-creation sandbox**
 - Rebuilds are frequent (near-daily during alpha)
+- During upstream alpha churn, prefer full teardown + fresh `nemoclaw onboard`
+  before Carbonite restore rather than trying to repair a drifted runtime in
+  place
 - Host-side patches (fetch-guard, openclaw.json, network policy) are outside
   Carbonite's scope — those require Priority 2 (custom image) to persist
 - Some re-pairing or host-side reattachment may still be required after restore
 - PAT-based auth is expedient for alpha; rotate regularly
+- GitHub TLS trust for sandbox `git` remains unresolved in current validation;
+  disposable tests required a repo-scoped `sslVerify=false` override for the
+  scratch archive only
 
 ### Bundle Architecture
 
@@ -128,6 +134,20 @@ openclaw cron list                   # check cron registration
 
 **Precondition:** Restore targets a clean, freshly created sandbox.
 
+**Important:** Carbonite restores continuity data, not a complete OpenClaw
+runtime bootstrap. The recommended alpha-era recovery path is:
+
+1. tear down the old disposable sandbox
+2. run fresh `nemoclaw onboard` to scaffold the new sandbox/runtime
+3. restore the Carbonite archive into that clean sandbox
+4. run `~/carbonite/carbonite-init.sh --continue`
+5. reapply any required host-side/runtime patches
+
+Do not assume a raw Carbonite restore alone will make `openclaw` immediately
+functional in a brand new sandbox; excluded runtime/bootstrap files such as
+`~/.openclaw/openclaw.json`, pairing state, and gateway bootstrap state still
+need to come from the fresh onboarded environment.
+
 ### On the host:
 
 ```bash
@@ -168,6 +188,31 @@ carbonite-backup 'post-restore verification'
 3. **Network policy** — `openshell policy set` (session notes Step 5)
 4. **Gateway restart inside sandbox** — kill old process, `openclaw gateway &`
 
+### Known unresolved Git/TLS issue
+
+- In current disposable validation, `curl` to GitHub succeeds from the sandbox
+  once policy is correct, but sandbox `git` still fails certificate validation.
+- Temporary validation workaround used:
+
+```bash
+git config http.https://github.com/snarkipus/carbonite-scratch.git.sslVerify false
+```
+
+- Keep this repo-scoped and scratch-only. Do **not** normalize a global
+  `http.sslVerify=false` setting as the default recovery path.
+- Until the TLS root cause is fixed, treat sandbox GitHub push/clone as an
+  environment caveat rather than a Carbonite archive-contract failure.
+
+### What restore proves vs. what it does not
+
+- Restore **does** preserve continuity artifacts such as session transcripts,
+  workspace memory notes, cron state, and nested workspace repo contents.
+- Restore **does not** by itself recreate the full excluded runtime/bootstrap
+  layer needed for OpenClaw to attach to that data in a fresh sandbox.
+- If restored files are present but `openclaw status --deep` or
+  `openclaw agent` still fail, treat that as runtime/bootstrap drift rather than
+  archive loss.
+
 ---
 
 ## Manual Operations
@@ -199,14 +244,18 @@ carbonite-bundle thaw                    # restore .git dirs from bundles
 
 1. **Not real-time** — 4-hour backup interval. Data between backups and a crash is lost.
 2. **No transparent restore** — Manual restore + init required after rebuild.
-3. **Host-side patches not covered** — Container overlay changes are out of scope.
-4. **Git push requires network policy** — `github` policy entry must be present.
-5. **Session data may grow** — Monitor with `du -sh ~/.openclaw/agents/main/sessions/`.
-6. **Bundle thaw is non-standard** — Post-thaw validation checks for sanity but cannot
+3. **Fresh onboard still required** — Carbonite is not a full substitute for
+   `nemoclaw onboard` during upstream runtime churn.
+4. **Host-side patches not covered** — Container overlay changes are out of scope.
+5. **Git push requires network policy** — `github` policy entry must be present.
+6. **Session data may grow** — Monitor with `du -sh ~/.openclaw/agents/main/sessions/`.
+7. **Bundle thaw is non-standard** — Post-thaw validation checks for sanity but cannot
    guarantee OpenClaw will behave identically to pre-backup state. Monitor for issues
    across rebuild cycles.
-7. **Credentials are plaintext** — PAT stored in `~/.git-credentials`. Acceptable for
+8. **Credentials are plaintext** — PAT stored in `~/.git-credentials`. Acceptable for
    alpha; use low-scope dedicated token and rotate regularly.
+9. **Sandbox Git TLS remains unresolved** — Current scratch validation still needs a
+   repo-scoped TLS bypass for sandbox `git` when talking to GitHub.
 
 ---
 

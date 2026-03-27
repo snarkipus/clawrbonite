@@ -52,13 +52,13 @@ case "$ACTION" in
       else
         # Bundle fails on repos with no commits — fall back to tar
         echo "    WARN: git bundle failed (no commits?), using tar fallback"
-        tar -cf "${PARENT}/.carbonite.bundle.tar" -C "$PARENT" .git 2>/dev/null && {
+        if tar -cf "${PARENT}/.carbonite.bundle.tar" -C "$PARENT" .git 2>/dev/null; then
           FOUND=$((FOUND + 1))
           echo "    Tar fallback created"
-        } || {
+        else
           echo "    ERROR: Could not archive ${PARENT}/.git"
           continue
-        }
+        fi
       fi
 
       # Move .git out of the way so git add -A won't hit submodule detection.
@@ -92,13 +92,13 @@ case "$ACTION" in
 
       if [[ "$BASENAME" == *.tar ]]; then
         # Tar fallback — extract directly
-        tar -xf "$bundle" -C "$PARENT" 2>/dev/null && {
+        if tar -xf "$bundle" -C "$PARENT" 2>/dev/null; then
           echo "    Restored from tar fallback"
           rm -f "$bundle"
           rm -rf "${PARENT}/.git.frozen" 2>/dev/null
-        } || {
+        else
           echo "    ERROR: Could not extract tar bundle"
-        }
+        fi
       else
         # ── Standard thaw: init → fetch → checkout → reset ──────────────
         # This follows the idiomatic git pattern for materializing a repo
@@ -177,7 +177,9 @@ case "$ACTION" in
       echo "  ${PARENT}/ (branch: ${BRANCH}, commits: ${COMMITS})"
       GITS=$((GITS + 1))
     done < <(find_nested_gits)
-    [ "$GITS" -eq 0 ] && echo "  (none)" || true
+    if [ "$GITS" -eq 0 ]; then
+      echo "  (none)"
+    fi
 
     echo ""
     echo "[carbonite-bundle] Existing bundles:"
@@ -186,7 +188,9 @@ case "$ACTION" in
       echo "  ${bundle} ($(du -sh "$bundle" | cut -f1))"
       BUNDLES=$((BUNDLES + 1))
     done < <(find_bundles)
-    [ "$BUNDLES" -eq 0 ] && echo "  (none)" || true
+    if [ "$BUNDLES" -eq 0 ]; then
+      echo "  (none)"
+    fi
     ;;
 
   *)

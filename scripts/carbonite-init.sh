@@ -509,7 +509,10 @@ BACKUP_SCRIPT
 chmod +x "$CARBONITE_BIN_DIR/carbonite-backup"
 
 # Make sure ~/carbonite/bin is in PATH
-grep -q 'HOME/carbonite/bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$HOME/carbonite/bin:$PATH"' >> ~/.bashrc
+PATH_EXPORT="export PATH=\"\$HOME/carbonite/bin:\$PATH\""
+if ! grep -Fq "$PATH_EXPORT" ~/.bashrc 2>/dev/null; then
+  printf '%s\n' "$PATH_EXPORT" >> ~/.bashrc
+fi
 export PATH="$HOME/carbonite/bin:$PATH"
 
 # ── Freeze nested repos ────────────────────────────────────────────────────
@@ -531,15 +534,15 @@ if [ "$CONTINUE_MODE" = true ]; then
   if [ -d .git ]; then
     rm -rf .git
   fi
-  git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null && {
+  if git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null; then
     mv /tmp/carbonite-bare.$$ .git
     git config --unset core.bare
     git reset HEAD -- . 2>/dev/null || true
     echo "    Existing history preserved ($(git rev-list --count HEAD 2>/dev/null || echo 0) commits)"
-  } || {
+  else
     echo "    WARN: Could not clone existing repo, starting fresh..."
     git init
-  }
+  fi
 
   # ── Verify restore integrity ──────────────────────────────────────────────
   echo ""
@@ -558,7 +561,9 @@ if [ "$CONTINUE_MODE" = true ]; then
       echo "    WARN: Missing files (may be expected if sandbox image differs):"
       git ls-files --deleted 2>/dev/null | head -20 | sed 's/^/      /'
       REMAINING=$((MISSING - 20))
-      [ "$REMAINING" -gt 0 ] && echo "      ... and ${REMAINING} more" || true
+      if [ "$REMAINING" -gt 0 ]; then
+        echo "      ... and ${REMAINING} more"
+      fi
     fi
 
     if [ "$MISSING" -eq 0 ] && [ "$MODIFIED" -eq 0 ]; then
@@ -625,11 +630,13 @@ echo "    carbonite-bundle freeze             # manually freeze nested repos"
 echo "    carbonite-bundle thaw               # restore .git dirs from bundles"
 echo ""
 echo "==> To set up scheduled backups via OpenClaw cron:"
-echo '    openclaw cron add \'
-echo '      --name "Carbonite backup" \'
-echo '      --cron "0 */4 * * *" \'
-echo '      --tz "America/New_York" \'
-echo '      --session isolated \'
-echo '      --message "Run this shell command and report the output: carbonite-backup" \'
-echo '      --light-context'
+cat <<'CRON_EXAMPLE'
+    openclaw cron add \
+      --name "Carbonite backup" \
+      --cron "0 */4 * * *" \
+      --tz "America/New_York" \
+      --session isolated \
+      --message "Run this shell command and report the output: carbonite-backup" \
+      --light-context
+CRON_EXAMPLE
 echo ""

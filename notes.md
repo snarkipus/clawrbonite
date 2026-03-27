@@ -3347,3 +3347,193 @@ git config http.https://github.com/snarkipus/carbonite-scratch.git.sslVerify fal
   1. Git/GitHub TLS trust inside the sandbox
   2. stale or broken host-side pairing state for `onboard-drill`
 - These should be tracked separately from Carbonite archive-scope work.
+
+## NemoClaw Session Notes — 2026-03-27 (Disposable Carbonite Validation Follow-Through)
+
+### Session Summary
+
+Followed the disposable Carbonite validation through the repaired sandbox state
+to confirm the full backup -> restore -> `--continue` flow against
+`snarkipus/carbonite-scratch`. This confirmed the Carbonite archive contract is
+working end-to-end when the sandbox runtime itself is healthy.
+
+### Environment Recovery Findings
+
+- `onboard-drill` was not actually broken at the filesystem/archive level.
+- The immediate `openclaw status --deep` failure was caused by an unapproved
+  device pairing request in sandbox-local OpenClaw state.
+- Approving the pending request with `openclaw devices approve --latest`
+  restored normal `openclaw status --deep` and `openclaw tui` behavior.
+- Host-side NemoClaw metadata was also stale:
+  - `openshell sandbox list` showed only `onboard-drill`
+  - `~/.nemoclaw/sandboxes.json` still pointed at `my-assistant`
+- Repaired `~/.nemoclaw/sandboxes.json` on the Hetzner host so NemoClaw again
+  matches live OpenShell state.
+
+### Backup Validation Result
+
+- Ran live backup again from healthy `onboard-drill`.
+- `carbonite-backup` created and pushed:
+  - commit `1684fb9`
+  - message `carbonite: post-pairing validation 2026-03-27T22:48:22Z`
+- Scratch archive contents remained aligned with the continuity contract,
+  including:
+  - shell/git dotfiles
+  - `~/carbonite/` scripts
+  - session continuity files
+  - cron state
+  - workspace continuity docs
+  - workspace nested repo archived as `.carbonite.bundle.tar`
+
+### Restore Validation Result
+
+- Created a fresh disposable sandbox:
+  - `restore-drill`
+- Restored the scratch archive by:
+  1. cloning `snarkipus/carbonite-scratch` on the host
+  2. packaging it as `carbonite-restore.tar`
+  3. uploading it into `restore-drill`
+  4. extracting it in `/sandbox`
+- Verified restored contents included:
+  - `~/carbonite/carbonite-init.sh`
+  - `~/carbonite/bin/carbonite-backup`
+  - continuity files under `~/.openclaw-data/...`
+  - `.openclaw-data/workspace/.carbonite.bundle.tar`
+
+### `--continue` Validation Result
+
+- Updated `restore-drill` policy so `git` could push to GitHub.
+- Applied the same repo-scoped TLS bypass used during disposable validation for:
+  - `https://github.com/snarkipus/carbonite-scratch.git`
+- Ran:
+
+```bash
+CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+  GH_PAT=... bash ~/carbonite/carbonite-init.sh --continue
+```
+
+- The successful `--continue` run:
+  - cloned existing scratch history
+  - reported `Missing after restore: 0`
+  - thawed and re-froze the workspace nested repo archive
+  - committed restored state
+  - pushed back to `carbonite-scratch`
+- Resulting pushed commit:
+  - `b11b6d9`
+  - `carbonite: restored backup (2026-03-27T23:09:45Z)`
+- Post-run verification showed the top-level Carbonite repo in `restore-drill`
+  was clean and tracking `origin/main`.
+
+### Additional Runtime Notes
+
+- `nemoclaw onboard-drill policy-list` does not reflect the live loaded policy
+  set even though:
+  - `nemoclaw onboard-drill status` does
+  - OpenShell policy inspection does
+- This appears to be separate NemoClaw policy bookkeeping drift, not a
+  Carbonite issue.
+- Tracked separately in:
+  - `clawrbonite-pba` — investigate policy-list drift for `onboard-drill`
+
+### Current Conclusion
+
+- Carbonite validation is now complete far enough to trust the archive contract
+  itself:
+  - backup from a healthy sandbox works
+  - restore into a fresh sandbox works
+  - `carbonite-init.sh --continue` successfully reconnects history and push flow
+- The remaining concerns are environmental/runtime concerns, not Carbonite
+  scope:
+  1. sandbox GitHub TLS trust remains broken for `git`
+  2. disposable sandboxes may need explicit policy adjustments for GitHub push
+  3. NemoClaw host/policy bookkeeping can drift from live OpenShell state
+
+## NemoClaw Session Notes — 2026-03-27 (Continuity Marker Restore Check)
+
+### Session Summary
+
+Ran one more disposable validation pass specifically to test whether a newly
+created OpenClaw conversation artifact survives backup/restore. The result was
+that Carbonite preserved and restored the continuity data correctly, but a fresh
+restored sandbox still lacked enough excluded OpenClaw runtime/bootstrap state
+to make that restored data immediately usable through the OpenClaw CLI.
+
+### Continuity Marker Test
+
+- In healthy `onboard-drill`, created a unique marker via:
+
+```bash
+openclaw agent --agent main --message \
+  "For continuity validation, remember this exact marker string and nothing else: CARBONITE-CONTINUITY-20260327-2329-ALBATROSS"
+```
+
+- Verified live recall before backup via:
+
+```bash
+openclaw agent --agent main --message \
+  "What exact continuity marker string did I just ask you to remember? Reply with only the marker."
+```
+
+- Live sandbox correctly replied with:
+  - `CARBONITE-CONTINUITY-20260327-2329-ALBATROSS`
+
+### Continuity Backup Result
+
+- Ran another Carbonite backup from `onboard-drill`.
+- New backup commit:
+  - `60cde8e`
+  - `carbonite: continuity marker validation 2026-03-27T23:29:25Z`
+- Backup captured the newly created continuity artifacts, including updates to:
+  - `.openclaw-data/agents/main/sessions/fe685382-ace4-4aa5-816e-cf4cc1733dba.jsonl`
+  - `.openclaw-data/agents/main/sessions/sessions.json`
+  - `.openclaw-data/workspace/memory/2026-03-27.md`
+
+### Fresh Restore Result
+
+- Created another fresh disposable sandbox:
+  - `continuity-drill`
+- Restored the latest scratch archive and ran:
+
+```bash
+CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
+  GH_PAT=... bash ~/carbonite/carbonite-init.sh --continue
+```
+
+- `--continue` succeeded cleanly:
+  - existing history preserved: 4 commits
+  - `Missing after restore: 0`
+  - `Modified after restore: 0`
+  - no new commit required because restored state matched the archive exactly
+
+### Restored Continuity Data Verification
+
+- The marker is present in restored files inside `continuity-drill`:
+  - `.openclaw-data/workspace/memory/2026-03-27.md`
+  - `.openclaw-data/agents/main/sessions/fe685382-ace4-4aa5-816e-cf4cc1733dba.jsonl`
+- Verified by direct search for:
+  - `CARBONITE-CONTINUITY-20260327-2329-ALBATROSS`
+
+### Runtime / Bootstrap Drift Finding
+
+- Although the continuity data was restored, `openclaw` in `continuity-drill`
+  was not yet operational enough to recall that state through the normal CLI.
+- Symptoms:
+  - `openclaw status --deep` failed because the gateway was not running
+  - `openclaw doctor` reported `gateway.mode is unset`
+  - restored sandbox lacked usable `~/.openclaw/openclaw.json`
+  - transcript/runtime references under `~/.openclaw/...` did not line up with
+    the restored continuity files under `~/.openclaw-data/...`
+- This is consistent with Carbonite's current contract:
+  - preserve continuity-critical data under `.openclaw-data/...`
+  - exclude runtime/bootstrap config like `~/.openclaw/openclaw.json`
+  - exclude pairing/device/bootstrap state
+
+### Current Interpretation
+
+- Carbonite successfully preserves and restores OpenClaw continuity data.
+- Carbonite does **not** currently restore a fully bootstrapped, immediately
+  runnable OpenClaw environment in a fresh sandbox by itself.
+- A fresh sandbox still needs enough runtime/bootstrap reconstruction for
+  OpenClaw to attach its CLI/gateway layer to the restored continuity data.
+- So the remaining gap is not archive loss; it is runtime/bootstrap drift
+  between excluded OpenClaw config/state and the restored continuity payload.

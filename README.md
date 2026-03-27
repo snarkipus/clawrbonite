@@ -3,6 +3,12 @@
 `clawrbonite` is the source-of-truth repository for Carbonite tooling used to
 back up and restore ephemeral OpenClaw sandbox state.
 
+Carbonite preserves continuity data, not a fully bootstrapped OpenClaw runtime.
+During upstream NemoClaw/OpenShell alpha churn, assume the safe recovery flow is
+full teardown -> fresh `nemoclaw onboard` -> Carbonite restore ->
+`~/carbonite/carbonite-init.sh --continue` -> reapply any required runtime or
+host-side patches.
+
 ## What Lives Here
 
 - `scripts/` - Carbonite tooling, including init, restore, backup, bundle, and
