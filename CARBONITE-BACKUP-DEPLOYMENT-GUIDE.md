@@ -66,7 +66,6 @@ RESTORE (thaw):
 - `.openclaw-data/workspace/` — SOUL.md, AGENTS.md, IDENTITY.md, USER.md,
   MEMORY.md, daily memory notes, and other user-authored workspace files
 - `.openclaw-data/cron/` — scheduled job definitions and run history
-- `.openclaw/memory/` — primary SQLite memory databases (not WAL/SHM sidecars)
 - `~/carbonite/` — sandbox Carbonite scripts and helper tools, including
   `~/carbonite/bin/`
 - `.bashrc`, `.profile`, `.gitconfig` — intentional shell and git customizations
@@ -77,6 +76,9 @@ RESTORE (thaw):
 - All nested `.git` directories (archived as `.carbonite.bundle` instead)
 - Credentials (`.git-credentials`, `identity/`, `auth-profiles.json`)
 - Device/pairing state (`.openclaw-data/devices/`, `.openclaw-data/identity/`)
+- `.openclaw/memory/` — rebuildable local memory-search SQLite index; recreate it
+  with `openclaw memory index --force` when the runtime exposes a writable
+  memory facade
 - Bootstrap/runtime config (`.nemoclaw/`, `.openclaw/openclaw.json`,
   `.openclaw/.config-hash`)
 - Shell history (`.bash_history`)

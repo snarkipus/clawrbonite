@@ -32,7 +32,7 @@ OpenClaw assistant across sandbox rebuilds.
 | `.openclaw/workspace/` user content | preserve | Primary user/agent workspace content |
 | `.openclaw-data/workspace/` | preserve | Backing writable workspace state; may be canonical behind symlinks |
 | `.openclaw/cron/` or `.openclaw-data/cron/` | preserve | Scheduled jobs are part of assistant continuity |
-| `.openclaw/memory/*.sqlite` | preserve | Primary SQLite-backed memory state should survive rebuilds |
+| `.openclaw/memory/*.sqlite` | recreate | Rebuildable local memory-search index; continuity survives from workspace/session state and the DB can be regenerated |
 | `.openclaw-data/agents/*/agent/models.json` | preserve | Generic runtime model metadata for the routed provider view; observed content is not secret-bearing |
 | Nested workspace `.git` history via `.carbonite.bundle*` | preserve | Needed to reconstruct OpenClaw-managed repos |
 | Durable user-authored workspace docs such as `SOUL.md`, `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` | preserve | Assistant behavior/state, not platform bootstrap |
