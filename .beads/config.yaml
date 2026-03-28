@@ -52,3 +52,12 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+routing.mode: "auto"
+routing.contributor: "~/.beads-planning"
+repos:
+  primary: "."
+  additional:
+    - "/home/snarkipus/.beads-planning"
+
+repos.additional: "~/.beads-planning"
