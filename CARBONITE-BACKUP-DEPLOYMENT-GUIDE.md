@@ -25,9 +25,9 @@ rebuild, you restore from the last backup into a clean sandbox.
   Carbonite's scope — those require Priority 2 (custom image) to persist
 - Some re-pairing or host-side reattachment may still be required after restore
 - PAT-based auth is expedient for alpha; rotate regularly
-- GitHub TLS trust for sandbox `git` remains unresolved in current validation;
-  disposable tests required a repo-scoped `sslVerify=false` override for the
-  scratch archive only
+- Sandbox GitHub HTTPS may run through OpenShell TLS termination; when
+  `/etc/openshell-tls/openshell-ca.pem` is present, sandbox `git` should trust
+  that CA for `github.com`
 
 ### Bundle Architecture
 
@@ -188,20 +188,25 @@ carbonite-backup 'post-restore verification'
 3. **Network policy** — `openshell policy set` (session notes Step 5)
 4. **Gateway restart inside sandbox** — kill old process, `openclaw gateway &`
 
-### Known unresolved Git/TLS issue
+### GitHub TLS trust inside the sandbox
 
-- In current disposable validation, `curl` to GitHub succeeds from the sandbox
-  once policy is correct, but sandbox `git` still fails certificate validation.
-- Temporary validation workaround used:
+- OpenShell may terminate outbound GitHub HTTPS at the sandbox egress proxy and
+  re-sign the connection with `/etc/openshell-tls/openshell-ca.pem`.
+- If sandbox `git` reports x509 or `CAfile: none` failures to `github.com`, set
+  trust explicitly before retrying push/clone:
 
 ```bash
-git config http.https://github.com/snarkipus/carbonite-scratch.git.sslVerify false
+export GIT_SSL_CAINFO=/etc/openshell-tls/openshell-ca.pem
+git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/openshell-ca.pem
 ```
 
-- Keep this repo-scoped and scratch-only. Do **not** normalize a global
-  `http.sslVerify=false` setting as the default recovery path.
-- Until the TLS root cause is fixed, treat sandbox GitHub push/clone as an
-  environment caveat rather than a Carbonite archive-contract failure.
+- `carbonite-init.sh` now applies that GitHub-scoped setting automatically when
+  the OpenShell CA file exists.
+- For `git push`, the sandbox also needs a loaded GitHub policy that permits
+  push traffic, not just fetch-only `git-upload-pack` rules.
+- Only fall back to a repo-scoped `sslVerify=false` override for disposable
+  scratch validation. Do **not** normalize a global `http.sslVerify=false`
+  setting as the default recovery path.
 
 ### What restore proves vs. what it does not
 
@@ -254,8 +259,9 @@ carbonite-bundle thaw                    # restore .git dirs from bundles
    across rebuild cycles.
 8. **Credentials are plaintext** — PAT stored in `~/.git-credentials`. Acceptable for
    alpha; use low-scope dedicated token and rotate regularly.
-9. **Sandbox Git TLS remains unresolved** — Current scratch validation still needs a
-   repo-scoped TLS bypass for sandbox `git` when talking to GitHub.
+9. **Sandbox Git TLS depends on proxy CA trust** — If GitHub HTTPS is
+   TLS-terminated by OpenShell, sandbox `git` must trust
+   `/etc/openshell-tls/openshell-ca.pem`.
 
 ---
 

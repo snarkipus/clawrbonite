@@ -50,9 +50,13 @@ git config --global user.name "snarkipus"
 git config --global user.email "snarkipus@users.noreply.github.com"
 git config --global init.defaultBranch main
 
-# Some sandbox images ship CA bundles that curl can use, but git does not pick
-# up automatically. Point git at the standard bundle/dir explicitly when present.
-if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+# Some sandbox images terminate GitHub TLS through the OpenShell proxy CA.
+# Prefer that CA for GitHub when present; otherwise fall back to the system
+# bundle/dir so git and curl agree on trust roots.
+if [ -f /etc/openshell-tls/openshell-ca.pem ]; then
+  export GIT_SSL_CAINFO=/etc/openshell-tls/openshell-ca.pem
+  git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/openshell-ca.pem
+elif [ -f /etc/ssl/certs/ca-certificates.crt ]; then
   git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 fi
 if [ -d /etc/ssl/certs ]; then
