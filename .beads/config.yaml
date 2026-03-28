@@ -53,11 +53,15 @@
 # - github.org
 # - github.repo
 
-routing.mode: "auto"
-routing.contributor: "~/.beads-planning"
+# routing.mode: "explicit"
+# routing.contributor: "~/.beads-planning"
 repos:
   primary: "."
   additional:
     - "/home/snarkipus/.beads-planning"
 
 repos.additional: "~/.beads-planning"
+
+# routing.maintainer: .
+
+# routing.default: "~/.beads-planning"
