@@ -4,3 +4,6 @@
 *.db
 .beads-credential-key
 .worktrees/
+
+# Local operator notes
+notes.md
