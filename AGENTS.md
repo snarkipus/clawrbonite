@@ -182,6 +182,14 @@ Do not claim a script is fully validated if you only performed static checks.
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
 
+### Repo Layout
+
+- Project issues live in this repo and use the `clawrbonite-...` prefix
+- Tangential or personal planning issues live in `~/.beads-planning` and use the `plan-...` prefix
+- Use project beads for work that should stay tied to this repo's deliverables, docs, or follow-up implementation
+- Use the planning repo for related but non-clawrbonite discoveries, side investigations, or personal backlog items that should not live in this repo's issue history
+- `~/.beads-planning` exists to keep exploratory planning separate while still allowing a unified view from inside this repo
+
 ### Quick Reference
 
 ```bash
@@ -189,13 +197,30 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work
 bd close <id>         # Complete work
+
+# Planning repo helpers (defined in ~/.zshrc)
+bdp "Title" -t task -p 2   # Create a planning issue in ~/.beads-planning
+bdlp                        # List planning-only issues
+bdall                       # Refresh planning export, sync, and list project+planning issues
+bdreadyall                  # Refresh planning export, sync, and show unified ready view
+bdsync                      # Manually sync additional repos into the local unified view
 ```
+
+### Planning Repo Notes
+
+- Current stable beads here is `0.62.0`
+- In this version, multi-repo hydration is JSONL-backed: unified views depend on `~/.beads-planning/.beads/issues.jsonl` plus `bd repo sync`
+- The `bdp`, `bdall`, and `bdreadyall` helpers hide that export/sync detail and are the preferred local workflow
+- Default project work should still use normal `bd ...` commands from this repo
+- If a planning issue should become project-scoped later, create a new project bead here rather than assuming automatic migration
 
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Before editing code or docs, create or claim the relevant bead in the appropriate repo
+- Prefer `bd create ...` in this repo for clawrbonite work and `bdp ...` for tangential planning
 
 ## Session Completion
 
