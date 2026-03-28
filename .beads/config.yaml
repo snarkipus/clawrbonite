@@ -53,15 +53,14 @@
 # - github.org
 # - github.repo
 
-# routing.mode: "explicit"
-# routing.contributor: "~/.beads-planning"
+# Explicit routing keeps project work local by default.
+# Use the planning helpers in ~/.zshrc for tangential work.
+routing.mode: "explicit"
+routing.default: "."
+routing.maintainer: "."
+routing.contributor: "/home/snarkipus/.beads-planning"
+
 repos:
   primary: "."
   additional:
     - "/home/snarkipus/.beads-planning"
-
-repos.additional: "~/.beads-planning"
-
-# routing.maintainer: .
-
-# routing.default: "~/.beads-planning"
