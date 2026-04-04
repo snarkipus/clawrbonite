@@ -101,6 +101,8 @@ cat > ~/.gitignore << 'GITIGNORE'
 .openclaw/openclaw.json.bak
 .openclaw/openclaw.json.bak.*
 .openclaw/.config-hash
+.openclaw-data/*.env
+.workspace-initialized
 
 # ── OpenClaw facade tree (capture canonical .openclaw-data instead) ─────────
 .openclaw/*
@@ -141,6 +143,9 @@ cat > ~/.gitignore << 'GITIGNORE'
 
 # ── Skills installed via clawhub (reproducible via clawhub install) ──────────
 skills/
+
+# ── Integration-installed extensions (recreated via runbooks) ────────────────
+.openclaw-data/extensions/
 
 # ── OS junk ─────────────────────────────────────────────────────────────────
 .DS_Store
