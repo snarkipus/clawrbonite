@@ -66,6 +66,7 @@ RESTORE (thaw):
 - `.openclaw-data/workspace/` — SOUL.md, AGENTS.md, IDENTITY.md, USER.md,
   MEMORY.md, daily memory notes, and other user-authored workspace files
 - `.openclaw-data/cron/` — scheduled job definitions and run history
+- `.openclaw-data/memory/` — canonical OpenClaw memory database state
 - `~/carbonite/` — sandbox Carbonite scripts and helper tools, including
   `~/carbonite/bin/`
 - `.bashrc`, `.profile`, `.gitconfig` — intentional shell and git customizations
@@ -76,9 +77,8 @@ RESTORE (thaw):
 - All nested `.git` directories (archived as `.carbonite.bundle` instead)
 - Credentials (`.git-credentials`, `identity/`, `auth-profiles.json`)
 - Device/pairing state (`.openclaw-data/devices/`, `.openclaw-data/identity/`)
-- `.openclaw/memory/` — rebuildable local memory-search SQLite index; recreate it
-  with `openclaw memory index --force` when the runtime exposes a writable
-  memory facade
+- `.openclaw/memory/` — facade/symlink path only; preserve the canonical
+  `.openclaw-data/memory/` target instead
 - Bootstrap/runtime config (`.nemoclaw/`, `.openclaw/openclaw.json`,
   `.openclaw/.config-hash`)
 - Shell history (`.bash_history`)
@@ -132,9 +132,20 @@ openclaw cron list                   # check cron registration
 
 ---
 
-## Restoring After a Rebuild
+## Restoring After Catastrophic Sandbox State Loss
 
 **Precondition:** Restore targets a clean, freshly created sandbox.
+
+This restore flow applies whenever the ephemeral OpenClaw sandbox state has been
+effectively lost and you have a sane host-side NemoClaw/OpenShell plus a fresh
+replacement sandbox target.
+
+Common causes include:
+
+- intentional teardown followed by fresh `nemoclaw onboard`
+- a rebuild or reprovision of the sandbox/runtime substrate
+- an OpenShell gateway replacement or rebootstrap event that unexpectedly pulls
+  a fresh runtime image or leaves the old ephemeral OpenClaw state unavailable
 
 **Important:** Carbonite restores continuity data, not a complete OpenClaw
 runtime bootstrap. The recommended alpha-era recovery path is:
@@ -149,6 +160,10 @@ Do not assume a raw Carbonite restore alone will make `openclaw` immediately
 functional in a brand new sandbox; excluded runtime/bootstrap files such as
 `~/.openclaw/openclaw.json`, pairing state, and gateway bootstrap state still
 need to come from the fresh onboarded environment.
+
+In other words, the principal cause of the loss event does not materially change
+the Carbonite restore mechanics. What matters is that restore starts from a
+clean sandbox attached to a sane host-side NemoClaw/OpenShell environment.
 
 ### On the host:
 

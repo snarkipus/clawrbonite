@@ -33,7 +33,7 @@ stage_preserved_paths() {
     ".openclaw-data/agents" \
     ".openclaw-data/workspace" \
     ".openclaw-data/cron" \
-    ".openclaw/memory" \
+    ".openclaw-data/memory" \
     "carbonite" \
     ".bashrc" \
     ".profile" \

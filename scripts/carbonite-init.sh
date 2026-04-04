@@ -104,8 +104,6 @@ cat > ~/.gitignore << 'GITIGNORE'
 
 # ── OpenClaw facade tree (capture canonical .openclaw-data instead) ─────────
 .openclaw/*
-!.openclaw/memory/
-!.openclaw/memory/*.sqlite
 
 # ── Shell history (noise, potential secret leakage) ─────────────────────────
 .bash_history
@@ -125,9 +123,6 @@ cat > ~/.gitignore << 'GITIGNORE'
 .openclaw/logs/
 .openclaw-data/update-check.json
 .openclaw/update-check.json
-.openclaw/memory/*.wal
-.openclaw/memory/*.sqlite-wal
-.openclaw/memory/*.sqlite-shm
 
 # ── Misc app config (reproducible, not worth tracking) ──────────────────────
 .config/
@@ -168,6 +163,7 @@ stage_preserved_paths() {
     ".openclaw-data/agents" \
     ".openclaw-data/workspace" \
     ".openclaw-data/cron" \
+    ".openclaw-data/memory" \
     "carbonite" \
     ".bashrc" \
     ".profile" \
