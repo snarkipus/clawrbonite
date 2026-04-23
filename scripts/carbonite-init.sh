@@ -84,7 +84,7 @@ echo "==> Writing .gitignore..."
 cat > ~/.gitignore << 'GITIGNORE'
 # =============================================================================
 # Carbonite .gitignore — OpenClaw sandbox backup
-# Last updated: 2026-03-22
+# Last updated: 2026-04-21
 # =============================================================================
 
 # ── Secrets & credentials (NEVER track) ─────────────────────────────────────
@@ -125,6 +125,8 @@ cat > ~/.gitignore << 'GITIGNORE'
 .openclaw/logs/
 .openclaw-data/update-check.json
 .openclaw/update-check.json
+.openclaw-data/agents/*/qmd/xdg-cache/
+.openclaw-data/agents/*/qmd/xdg-config/
 
 # ── Misc app config (reproducible, not worth tracking) ──────────────────────
 .config/
@@ -193,6 +195,8 @@ drop_excluded_paths() {
     ".openclaw/logs" \
     ".openclaw-data/update-check.json" \
     ".openclaw/update-check.json" \
+    ".openclaw-data/agents/*/qmd/xdg-cache" \
+    ".openclaw-data/agents/*/qmd/xdg-config" \
     ".openclaw/agents/*/agent/auth-profiles.json" \
     ".openclaw-data/agents/*/agent/auth-profiles.json" \
     ".git-credentials"

@@ -58,6 +58,8 @@ drop_excluded_paths() {
     ".openclaw/logs" \
     ".openclaw-data/update-check.json" \
     ".openclaw/update-check.json" \
+    ".openclaw-data/agents/*/qmd/xdg-cache" \
+    ".openclaw-data/agents/*/qmd/xdg-config" \
     ".openclaw/agents/*/agent/auth-profiles.json" \
     ".openclaw-data/agents/*/agent/auth-profiles.json" \
     ".git-credentials"

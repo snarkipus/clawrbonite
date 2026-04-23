@@ -79,6 +79,9 @@ RESTORE (thaw):
 - Device/pairing state (`.openclaw-data/devices/`, `.openclaw-data/identity/`)
 - `.openclaw/memory/` — facade/symlink path only; preserve the canonical
   `.openclaw-data/memory/` target instead
+- `.openclaw-data/agents/*/qmd/xdg-cache/` and `xdg-config/` — QMD runtime
+  cache, index, and downloaded embedding model artifacts; reproducible and too
+  large/noisy for the Carbonite archive
 - Bootstrap/runtime config (`.nemoclaw/`, `.openclaw/openclaw.json`,
   `.openclaw/.config-hash`)
 - Shell history (`.bash_history`)
@@ -196,7 +199,29 @@ bash ~/carbonite/bin/env-setup
 # Verify
 carbonite-bundle status
 carbonite-backup 'post-restore verification'
+openclaw memory status --deep
 ```
+
+### Post-restore QMD rebuild
+
+Carbonite intentionally excludes QMD runtime cache/model artifacts from backup:
+
+- `~/.openclaw/agents/*/qmd/xdg-cache/`
+- `~/.openclaw/agents/*/qmd/xdg-config/`
+
+That means a restore brings back the source content (`MEMORY.md`, daily memory
+notes, wiki files, cron state), but not a ready-to-use QMD runtime index.
+
+Operational expectation after restore:
+
+- QMD may have zero/stale collections until rebuilt
+- the local embedding model may be downloaded again on first rebuild
+- direct/shared search can remain incomplete until reindex finishes
+
+Treat QMD rebuild/reindex as part of restore validation. After the restored
+workspace/wiki content is in place, verify memory status and rebuild QMD if the
+index is empty, stale, or missing expected collections. Record that rebuild in
+handoff notes when it was required.
 
 ### Host-side patches still needed (until Priority 2 custom image):
 

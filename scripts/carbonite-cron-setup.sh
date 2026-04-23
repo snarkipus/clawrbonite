@@ -16,6 +16,13 @@
 set -euo pipefail
 
 JOB_NAME="Carbonite backup"
+BACKUP_CMD="$HOME/carbonite/bin/carbonite-backup"
+
+if [ ! -x "$BACKUP_CMD" ]; then
+  echo "ERROR: Expected Carbonite helper not found: $BACKUP_CMD"
+  echo "       Run 'bash ~/carbonite/carbonite-init.sh --continue' first."
+  exit 1
+fi
 
 echo "==> Checking for existing Carbonite cron job..."
 
@@ -39,7 +46,7 @@ openclaw cron add \
   --cron "0 */4 * * *" \
   --tz "America/New_York" \
   --session isolated \
-  --message "Run this shell command and report the output: carbonite-backup" \
+  --message "Run this shell command and report the output: $BACKUP_CMD" \
   --light-context
 
 echo ""
@@ -59,4 +66,6 @@ echo ""
 echo "==> Note: Cron jobs persist in ~/.openclaw/cron/jobs.json"
 echo "    They survive gateway restarts but NOT sandbox rebuilds."
 echo "    After a rebuild, re-run this script."
+echo "    This script registers the backup helper by absolute path so cron jobs"
+echo "    do not depend on interactive shell PATH setup."
 echo ""
