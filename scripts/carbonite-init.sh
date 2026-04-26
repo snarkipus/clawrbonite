@@ -4,23 +4,23 @@
 # =============================================================================
 # Run this INSIDE the sandbox after a rebuild.
 # Prerequisites:
-#   - GitHub PAT with repo scope (will be prompted or set GH_PAT env var)
+#   - GitHub CLI (`gh`) installed in the sandbox image
+#   - GitHub CLI auth available via the runtime `GITHUB_TOKEN` provider
 #   - git installed in sandbox (should be available by default)
 #
 # This script:
 #   1. Configures git identity & credentials
 #   2. Creates .gitignore tuned for OpenClaw sandbox
-#   3. Installs carbonite-bundle, carbonite-backup helper scripts to ~/carbonite/bin/
+#   3. Installs Carbonite helpers to ~/.openclaw-data/carbonite/bin/
 #   4. Freezes nested git repos into .bundle files (git bundle)
-#   5. Initializes Carbonite repo at /sandbox (HOME)
+#   5. Initializes Carbonite repo at ~/.openclaw-data
 #   6. Pushes to the configured Carbonite archive repo
 #
 # Usage:
-#   GH_PAT=ghp_xxx bash carbonite-init.sh              # fresh start (force-push)
-#   GH_PAT=ghp_xxx bash carbonite-init.sh --continue    # after restore (preserves history)
+#   bash carbonite-init.sh                               # fresh start (force-push)
+#   bash carbonite-init.sh --continue                    # after restore (preserves history)
 #   CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
-#     GH_PAT=ghp_xxx bash carbonite-init.sh             # disposable validation target
-#   bash carbonite-init.sh                               # will prompt for PAT
+#     bash carbonite-init.sh                             # disposable validation target
 # =============================================================================
 
 set -euo pipefail
@@ -34,8 +34,11 @@ if [ -z "$REPO_NAME" ]; then
   REPO_NAME="$DEFAULT_REPO_NAME"
 fi
 CONTINUE_MODE=false
-CARBONITE_HOME="$HOME/carbonite"
+CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+CARBONITE_HOME="$CARBONITE_REPO_ROOT/carbonite"
 CARBONITE_BIN_DIR="$CARBONITE_HOME/bin"
+CARBONITE_GITIGNORE="$CARBONITE_REPO_ROOT/.gitignore"
+CARBONITE_ENV_HELPER="$CARBONITE_HOME/env.sh"
 
 # Parse flags
 for arg in "$@"; do
@@ -43,6 +46,39 @@ for arg in "$@"; do
     --continue) CONTINUE_MODE=true ;;
   esac
 done
+
+source_carbonite_env() {
+  if [ -f "$CARBONITE_ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    . "$CARBONITE_ENV_HELPER"
+  fi
+}
+
+has_materialized_github_token() {
+  [ -n "${GITHUB_TOKEN:-}" ] && [[ "$GITHUB_TOKEN" != openshell:resolve:env:* ]]
+}
+
+git_auth_args() {
+  if has_materialized_github_token; then
+    local auth
+    auth=$(printf '%s' "x-access-token:${GITHUB_TOKEN}" | base64 | tr -d '\n')
+    printf '%s\n' \
+      "-c" \
+      "credential.helper=" \
+      "-c" \
+      "http.https://github.com/.extraHeader=Authorization: Basic ${auth}"
+  fi
+}
+
+run_git() {
+  local -a args=()
+  while IFS= read -r line; do
+    args+=("$line")
+  done < <(git_auth_args)
+  git "${args[@]}" "$@"
+}
+
+source_carbonite_env
 
 # ── Git identity ────────────────────────────────────────────────────────────
 echo "==> Configuring git identity..."
@@ -63,49 +99,52 @@ if [ -d /etc/ssl/certs ]; then
   git config --global http.sslCAPath /etc/ssl/certs
 fi
 
-# ── GitHub PAT ──────────────────────────────────────────────────────────────
-if [ -z "${GH_PAT:-}" ]; then
-  read -rsp "GitHub PAT (repo scope): " GH_PAT
-  echo
-fi
-
-if [ -z "$GH_PAT" ]; then
-  echo "ERROR: No GitHub PAT provided. Aborting."
+# ── GitHub CLI auth ─────────────────────────────────────────────────────────
+if ! command -v gh >/dev/null 2>&1; then
+  echo "ERROR: gh is required inside the sandbox for Carbonite init."
   exit 1
 fi
 
-# Store credentials for HTTPS push (sandbox can't do SSH easily)
-git config --global credential.helper store
-echo "https://snarkipus:${GH_PAT}@github.com" > ~/.git-credentials
-chmod 600 ~/.git-credentials
+# Use the runtime GitHub CLI auth and wire git through gh's credential helper.
+mkdir -p "$CARBONITE_HOME"
+echo "==> Checking GitHub CLI auth..."
+if has_materialized_github_token; then
+  echo "    Using local GITHUB_TOKEN fallback from ~/.openclaw-data/carbonite/env.sh for git transport."
+elif ! gh auth status >/dev/null 2>&1; then
+  echo "ERROR: gh is not authenticated inside the sandbox."
+  echo "       Ensure the runtime GitHub credential provider is attached before continuing,"
+  echo "       or export a real GITHUB_TOKEN in ~/.openclaw-data/carbonite/env.sh."
+  exit 1
+else
+  gh auth setup-git --hostname github.com
+fi
 
 # ── .gitignore ──────────────────────────────────────────────────────────────
 echo "==> Writing .gitignore..."
-cat > ~/.gitignore << 'GITIGNORE'
+mkdir -p "$CARBONITE_REPO_ROOT"
+cat > "$CARBONITE_GITIGNORE" << 'GITIGNORE'
 # =============================================================================
 # Carbonite .gitignore — OpenClaw sandbox backup
-# Last updated: 2026-04-21
+# Last updated: 2026-04-26
 # =============================================================================
 
 # ── Secrets & credentials (NEVER track) ─────────────────────────────────────
-.git-credentials
-.openclaw/identity/
-.openclaw-data/identity/
-.openclaw-data/devices/
-.openclaw/agents/*/agent/auth-profiles.json
-.openclaw-data/agents/*/agent/auth-profiles.json
+agents/*/agent/auth-profiles.json
 
-# ── Bootstrap/runtime config (recreated, not preserved) ────────────────────
-.nemoclaw/
-.openclaw/openclaw.json
-.openclaw/openclaw.json.bak
-.openclaw/openclaw.json.bak.*
-.openclaw/.config-hash
-.openclaw-data/*.env
-.workspace-initialized
+# ── Local operator helpers (recreated, not preserved) ───────────────────────
+carbonite/env.sh
+*.env
 
-# ── OpenClaw facade tree (capture canonical .openclaw-data instead) ─────────
-.openclaw/*
+# ── Runtime/bootstrap artifacts (recreated, not preserved) ──────────────────
+credentials/
+identity/
+devices/
+exec-approvals.json
+update-check.json
+extensions/
+logs/
+plugin-runtime-deps/
+openclaw.json.bak-*
 
 # ── Shell history (noise, potential secret leakage) ─────────────────────────
 .bash_history
@@ -119,14 +158,12 @@ cat > ~/.gitignore << 'GITIGNORE'
 **/node_modules/
 
 # ── OpenClaw caches & ephemeral data ────────────────────────────────────────
-.openclaw/cache/
-.openclaw/snapshots/
-.openclaw/completions/
-.openclaw/logs/
-.openclaw-data/update-check.json
-.openclaw/update-check.json
-.openclaw-data/agents/*/qmd/xdg-cache/
-.openclaw-data/agents/*/qmd/xdg-config/
+cache/
+snapshots/
+completions/
+logs/
+agents/*/qmd/xdg-cache/
+agents/*/qmd/xdg-config/
 
 # ── Misc app config (reproducible, not worth tracking) ──────────────────────
 .config/
@@ -142,12 +179,6 @@ cat > ~/.gitignore << 'GITIGNORE'
 
 # ── Browser / Chromium (if agent-browser ever gets installed) ───────────────
 **/chromium/
-
-# ── Skills installed via clawhub (reproducible via clawhub install) ──────────
-skills/
-
-# ── Integration-installed extensions (recreated via runbooks) ────────────────
-.openclaw-data/extensions/
 
 # ── OS junk ─────────────────────────────────────────────────────────────────
 .DS_Store
@@ -167,14 +198,21 @@ GITIGNORE
 stage_preserved_paths() {
   local path
   for path in \
-    ".openclaw-data/agents" \
-    ".openclaw-data/workspace" \
-    ".openclaw-data/cron" \
-    ".openclaw-data/memory" \
+    "agents" \
+    "canvas" \
+    "workspace" \
+    "cron" \
+    "flows" \
+    "hooks" \
+    "media" \
+    "memory" \
+    "qmd" \
+    "sandbox" \
+    "skills" \
+    "tasks" \
+    "telegram" \
+    "wiki" \
     "carbonite" \
-    ".bashrc" \
-    ".profile" \
-    ".gitconfig" \
     ".gitignore"
   do
     [ -e "$path" ] || continue
@@ -184,26 +222,23 @@ stage_preserved_paths() {
 
 drop_excluded_paths() {
   git rm -r --cached --ignore-unmatch -- \
-    ".nemoclaw" \
-    ".openclaw/openclaw.json" \
-    ".openclaw/openclaw.json.bak" \
-    ".openclaw/openclaw.json.bak.*" \
-    ".openclaw/.config-hash" \
-    ".openclaw/identity" \
-    ".openclaw-data/identity" \
-    ".openclaw-data/devices" \
-    ".openclaw/logs" \
-    ".openclaw-data/update-check.json" \
-    ".openclaw/update-check.json" \
-    ".openclaw-data/agents/*/qmd/xdg-cache" \
-    ".openclaw-data/agents/*/qmd/xdg-config" \
-    ".openclaw/agents/*/agent/auth-profiles.json" \
-    ".openclaw-data/agents/*/agent/auth-profiles.json" \
-    ".git-credentials"
+    "credentials" \
+    "identity" \
+    "devices" \
+    "exec-approvals.json" \
+    "update-check.json" \
+    "extensions" \
+    "logs" \
+    "plugin-runtime-deps" \
+    "openclaw.json.bak-*" \
+    "agents/*/qmd/xdg-cache" \
+    "agents/*/qmd/xdg-config" \
+    "agents/*/agent/auth-profiles.json" \
+    "carbonite/env.sh"
 }
 
 # ── Install helper scripts ─────────────────────────────────────────────────
-echo "==> Installing helper scripts to ~/carbonite/bin/..."
+echo "==> Installing helper scripts to ~/.openclaw-data/carbonite/bin/..."
 mkdir -p "$CARBONITE_BIN_DIR"
 
 # ── carbonite-bundle: freeze/thaw nested git repos ─────────────────────────
@@ -224,7 +259,9 @@ cat > "$CARBONITE_BIN_DIR/carbonite-bundle" << 'BUNDLE_SCRIPT'
 
 set -euo pipefail
 
-cd ~
+CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+
+cd "$CARBONITE_REPO_ROOT"
 
 ACTION="${1:-status}"
 
@@ -425,7 +462,10 @@ cat > "$CARBONITE_BIN_DIR/carbonite-backup" << 'BACKUP_SCRIPT'
 
 set -euo pipefail
 
-LOCKFILE="${HOME}/.carbonite.lock"
+CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+CARBONITE_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CARBONITE_ENV_HELPER="$CARBONITE_REPO_ROOT/carbonite/env.sh"
+LOCKFILE="${CARBONITE_REPO_ROOT}/.carbonite.lock"
 
 # ── Acquire exclusive lock (fail immediately if another run is active) ──────
 exec 9>"$LOCKFILE"
@@ -434,21 +474,61 @@ if ! flock -n 9; then
   exit 0
 fi
 
-cd ~
+cd "$CARBONITE_REPO_ROOT"
 
 MSG="${1:-carbonite: scheduled backup $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+source_carbonite_env() {
+  if [ -f "$CARBONITE_ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    . "$CARBONITE_ENV_HELPER"
+  fi
+}
+
+has_materialized_github_token() {
+  [ -n "${GITHUB_TOKEN:-}" ] && [[ "$GITHUB_TOKEN" != openshell:resolve:env:* ]]
+}
+
+git_auth_args() {
+  if has_materialized_github_token; then
+    local auth
+    auth=$(printf '%s' "x-access-token:${GITHUB_TOKEN}" | base64 | tr -d '\n')
+    printf '%s\n' \
+      "-c" \
+      "credential.helper=" \
+      "-c" \
+      "http.https://github.com/.extraHeader=Authorization: Basic ${auth}"
+  fi
+}
+
+run_git() {
+  local -a args=()
+  while IFS= read -r line; do
+    args+=("$line")
+  done < <(git_auth_args)
+  git "${args[@]}" "$@"
+}
+
+source_carbonite_env
 
 stage_preserved_paths() {
   local path
   for path in \
-    ".openclaw-data/agents" \
-    ".openclaw-data/workspace" \
-    ".openclaw-data/cron" \
-    ".openclaw-data/memory" \
+    "agents" \
+    "canvas" \
+    "workspace" \
+    "cron" \
+    "flows" \
+    "hooks" \
+    "media" \
+    "memory" \
+    "qmd" \
+    "sandbox" \
+    "skills" \
+    "tasks" \
+    "telegram" \
+    "wiki" \
     "carbonite" \
-    ".bashrc" \
-    ".profile" \
-    ".gitconfig" \
     ".gitignore"
   do
     [ -e "$path" ] || continue
@@ -458,24 +538,23 @@ stage_preserved_paths() {
 
 drop_excluded_paths() {
   git rm -r --cached --ignore-unmatch -- \
-    ".nemoclaw" \
-    ".openclaw/openclaw.json" \
-    ".openclaw/openclaw.json.bak" \
-    ".openclaw/openclaw.json.bak.*" \
-    ".openclaw/.config-hash" \
-    ".openclaw/identity" \
-    ".openclaw-data/identity" \
-    ".openclaw-data/devices" \
-    ".openclaw/logs" \
-    ".openclaw-data/update-check.json" \
-    ".openclaw/update-check.json" \
-    ".openclaw/agents/*/agent/auth-profiles.json" \
-    ".openclaw-data/agents/*/agent/auth-profiles.json" \
-    ".git-credentials"
+    "credentials" \
+    "identity" \
+    "devices" \
+    "exec-approvals.json" \
+    "update-check.json" \
+    "extensions" \
+    "logs" \
+    "plugin-runtime-deps" \
+    "openclaw.json.bak-*" \
+    "agents/*/qmd/xdg-cache" \
+    "agents/*/qmd/xdg-config" \
+    "agents/*/agent/auth-profiles.json" \
+    "carbonite/env.sh"
 }
 
 # Freeze nested git repos into .bundle files
-carbonite-bundle freeze
+"$CARBONITE_BIN_DIR/carbonite-bundle" freeze
 
 # Stage only the validated continuity paths, then drop tracked exclusions
 stage_preserved_paths
@@ -487,7 +566,7 @@ if git diff --cached --quiet; then
   UNPUSHED=$(git log --oneline origin/main..HEAD 2>/dev/null | wc -l)
   if [ "$UNPUSHED" -gt 0 ]; then
     echo "[carbonite] No new changes, but ${UNPUSHED} unpushed commit(s) found. Retrying push..."
-    if git push origin main 2>&1; then
+    if run_git push origin main 2>&1; then
       echo "[carbonite] Push retry succeeded."
     else
       echo "[carbonite] WARN: Push retry failed. Will try again next run."
@@ -507,7 +586,7 @@ git commit -m "$MSG"
 echo "[carbonite] Committed locally."
 
 # Push to remote (non-fatal — local commit is preserved on failure)
-if git push origin main 2>&1; then
+if run_git push origin main 2>&1; then
   echo "[carbonite] Backup pushed successfully."
 else
   echo "[carbonite] WARN: Push failed (network/auth issue?). Local commit preserved."
@@ -516,12 +595,9 @@ fi
 BACKUP_SCRIPT
 chmod +x "$CARBONITE_BIN_DIR/carbonite-backup"
 
-# Make sure ~/carbonite/bin is in PATH
-PATH_EXPORT="export PATH=\"\$HOME/carbonite/bin:\$PATH\""
-if ! grep -Fq "$PATH_EXPORT" ~/.bashrc 2>/dev/null; then
-  printf '%s\n' "$PATH_EXPORT" >> ~/.bashrc
-fi
-export PATH="$HOME/carbonite/bin:$PATH"
+# PATH is locked down by the sandbox entrypoint. Export helpers only for the
+# current process; future interactive sessions should use absolute helper paths.
+export PATH="$CARBONITE_BIN_DIR:$PATH"
 
 # ── Freeze nested repos ────────────────────────────────────────────────────
 echo ""
@@ -533,7 +609,7 @@ echo "==> Freezing nested git repos into bundles..."
 carbonite-bundle freeze
 
 # ── Initialize Carbonite repo ──────────────────────────────────────────────
-cd ~
+cd "$CARBONITE_REPO_ROOT"
 echo ""
 echo "==> Initializing Carbonite repo in $(pwd)..."
 
@@ -542,7 +618,7 @@ if [ "$CONTINUE_MODE" = true ]; then
   if [ -d .git ]; then
     rm -rf .git
   fi
-  if git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null; then
+  if run_git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null; then
     mv /tmp/carbonite-bare.$$ .git
     git config --unset core.bare
     git reset HEAD -- . 2>/dev/null || true
@@ -579,7 +655,7 @@ if [ "$CONTINUE_MODE" = true ]; then
     fi
   else
     echo "    No existing Carbonite history found."
-    echo "    Continuing with restored filesystem snapshot and fresh top-level repo."
+    echo "    Continuing with restored filesystem snapshot and fresh .openclaw-data repo."
   fi
 
   # ── Thaw bundles back to .git dirs ────────────────────────────────────────
@@ -593,7 +669,7 @@ if [ "$CONTINUE_MODE" = true ]; then
 
   # Remove the host-uploaded restore transport archive before staging.
   # It is only needed to materialize the restored filesystem snapshot.
-  rm -f ~/carbonite-restore.tar
+  rm -f "$HOME/carbonite-restore.tar" /tmp/carbonite-restore-upload/carbonite-restore.tar
 
   # ── Stage, commit if needed, push ─────────────────────────────────────────
   # Re-freeze after thaw so the .gitignore-excluded .git dirs don't cause
@@ -608,7 +684,7 @@ if [ "$CONTINUE_MODE" = true ]; then
     echo "    No changes from remote — working tree matches last backup."
   fi
   git remote add origin "${REPO_URL}" 2>/dev/null || git remote set-url origin "${REPO_URL}"
-  git push -u origin main
+  run_git push -u origin main
 else
   if [ -d .git ]; then
     echo "    Git repo already exists, removing to start fresh..."
@@ -621,7 +697,7 @@ else
 
   echo "==> Force-pushing to ${REPO_NAME} (this will overwrite remote)..."
   git remote add origin "${REPO_URL}" 2>/dev/null || git remote set-url origin "${REPO_URL}"
-  git push --force -u origin main
+  run_git push --force -u origin main
 fi
 
 echo ""
@@ -631,20 +707,22 @@ echo "    Branch: main"
 echo "    Tracked files: $(git ls-files | wc -l)"
 echo ""
 echo "==> Available commands:"
-echo "    carbonite-backup                    # incremental backup (auto-freezes)"
-echo "    carbonite-backup 'my message'       # backup with custom message"
-echo "    carbonite-bundle status             # show nested repos & bundles"
-echo "    carbonite-bundle freeze             # manually freeze nested repos"
-echo "    carbonite-bundle thaw               # restore .git dirs from bundles"
+echo "    ~/.openclaw-data/carbonite/bin/carbonite-backup              # incremental backup"
+echo "    ~/.openclaw-data/carbonite/bin/carbonite-backup 'my message' # custom message"
+echo "    ~/.openclaw-data/carbonite/bin/carbonite-bundle status       # show bundles"
+echo "    ~/.openclaw-data/carbonite/bin/carbonite-bundle freeze       # freeze repos"
+echo "    ~/.openclaw-data/carbonite/bin/carbonite-bundle thaw         # restore repos"
 echo ""
 echo "==> To set up scheduled backups via OpenClaw cron:"
 cat <<'CRON_EXAMPLE'
     openclaw cron add \
       --name "Carbonite backup" \
-      --cron "0 */4 * * *" \
+      --cron "0 0,12 * * *" \
       --tz "America/New_York" \
       --session isolated \
-      --message "Run this shell command and report the output: carbonite-backup" \
-      --light-context
+      --message "Run this shell command and report the output: ~/.openclaw-data/carbonite/bin/carbonite-backup" \
+      --light-context \
+      --channel telegram \
+      --to 7948676994
 CRON_EXAMPLE
 echo ""

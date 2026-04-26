@@ -14,7 +14,10 @@
 
 set -euo pipefail
 
-LOCKFILE="${HOME}/.carbonite.lock"
+CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+CARBONITE_BIN_DIR="$CARBONITE_REPO_ROOT/carbonite/bin"
+CARBONITE_ENV_HELPER="$CARBONITE_REPO_ROOT/carbonite/env.sh"
+LOCKFILE="${CARBONITE_REPO_ROOT}/.carbonite.lock"
 
 # ── Acquire exclusive lock (fail immediately if another run is active) ──────
 exec 9>"$LOCKFILE"
@@ -23,21 +26,61 @@ if ! flock -n 9; then
   exit 0
 fi
 
-cd ~
+cd "$CARBONITE_REPO_ROOT"
 
 MSG="${1:-carbonite: scheduled backup $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+source_carbonite_env() {
+  if [ -f "$CARBONITE_ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    . "$CARBONITE_ENV_HELPER"
+  fi
+}
+
+has_materialized_github_token() {
+  [ -n "${GITHUB_TOKEN:-}" ] && [[ "$GITHUB_TOKEN" != openshell:resolve:env:* ]]
+}
+
+git_auth_args() {
+  if has_materialized_github_token; then
+    local auth
+    auth=$(printf '%s' "x-access-token:${GITHUB_TOKEN}" | base64 | tr -d '\n')
+    printf '%s\n' \
+      "-c" \
+      "credential.helper=" \
+      "-c" \
+      "http.https://github.com/.extraHeader=Authorization: Basic ${auth}"
+  fi
+}
+
+run_git() {
+  local -a args=()
+  while IFS= read -r line; do
+    args+=("$line")
+  done < <(git_auth_args)
+  git "${args[@]}" "$@"
+}
+
+source_carbonite_env
 
 stage_preserved_paths() {
   local path
   for path in \
-    ".openclaw-data/agents" \
-    ".openclaw-data/workspace" \
-    ".openclaw-data/cron" \
-    ".openclaw-data/memory" \
+    "agents" \
+    "canvas" \
+    "workspace" \
+    "cron" \
+    "flows" \
+    "hooks" \
+    "media" \
+    "memory" \
+    "qmd" \
+    "sandbox" \
+    "skills" \
+    "tasks" \
+    "telegram" \
+    "wiki" \
     "carbonite" \
-    ".bashrc" \
-    ".profile" \
-    ".gitconfig" \
     ".gitignore"
   do
     [ -e "$path" ] || continue
@@ -47,26 +90,24 @@ stage_preserved_paths() {
 
 drop_excluded_paths() {
   git rm -r --cached --ignore-unmatch -- \
-    ".nemoclaw" \
-    ".openclaw/openclaw.json" \
-    ".openclaw/openclaw.json.bak" \
-    ".openclaw/openclaw.json.bak.*" \
-    ".openclaw/.config-hash" \
-    ".openclaw/identity" \
-    ".openclaw-data/identity" \
-    ".openclaw-data/devices" \
-    ".openclaw/logs" \
-    ".openclaw-data/update-check.json" \
-    ".openclaw/update-check.json" \
-    ".openclaw-data/agents/*/qmd/xdg-cache" \
-    ".openclaw-data/agents/*/qmd/xdg-config" \
-    ".openclaw/agents/*/agent/auth-profiles.json" \
-    ".openclaw-data/agents/*/agent/auth-profiles.json" \
-    ".git-credentials"
+    "credentials" \
+    "identity" \
+    "devices" \
+    "exec-approvals.json" \
+    "update-check.json" \
+    "extensions" \
+    "logs" \
+    "plugin-runtime-deps" \
+    "openclaw.json.bak-*" \
+    "agents/*/qmd/xdg-cache" \
+    "agents/*/qmd/xdg-config" \
+    "agents/*/agent/auth-profiles.json" \
+    "carbonite/.git-credentials" \
+    "carbonite/env.sh"
 }
 
 # Freeze nested git repos into .bundle files
-carbonite-bundle freeze
+"$CARBONITE_BIN_DIR/carbonite-bundle" freeze
 
 # Stage only the validated continuity paths, then drop tracked exclusions
 stage_preserved_paths
@@ -78,7 +119,7 @@ if git diff --cached --quiet; then
   UNPUSHED=$(git log --oneline origin/main..HEAD 2>/dev/null | wc -l)
   if [ "$UNPUSHED" -gt 0 ]; then
     echo "[carbonite] No new changes, but ${UNPUSHED} unpushed commit(s) found. Retrying push..."
-    if git push origin main 2>&1; then
+    if run_git push origin main 2>&1; then
       echo "[carbonite] Push retry succeeded."
     else
       echo "[carbonite] WARN: Push retry failed. Will try again next run."
@@ -98,7 +139,7 @@ git commit -m "$MSG"
 echo "[carbonite] Committed locally."
 
 # Push to remote (non-fatal — local commit is preserved on failure)
-if git push origin main 2>&1; then
+if run_git push origin main 2>&1; then
   echo "[carbonite] Backup pushed successfully."
 else
   echo "[carbonite] WARN: Push failed (network/auth issue?). Local commit preserved."

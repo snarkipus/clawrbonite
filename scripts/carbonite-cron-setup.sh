@@ -4,7 +4,7 @@
 # =============================================================================
 # Run this INSIDE the sandbox after carbonite-init.sh has completed.
 #
-# Creates a recurring cron job that runs carbonite-backup every 4 hours.
+# Creates a recurring cron job that runs carbonite-backup twice daily.
 # The job runs in an isolated session with lightweight context to minimize
 # token burn. carbonite-backup automatically freezes nested repos before
 # staging.
@@ -16,11 +16,13 @@
 set -euo pipefail
 
 JOB_NAME="Carbonite backup"
-BACKUP_CMD="$HOME/carbonite/bin/carbonite-backup"
+BACKUP_CMD="$HOME/.openclaw-data/carbonite/bin/carbonite-backup"
+DELIVERY_CHANNEL="telegram"
+DELIVERY_TO="7948676994"
 
 if [ ! -x "$BACKUP_CMD" ]; then
   echo "ERROR: Expected Carbonite helper not found: $BACKUP_CMD"
-  echo "       Run 'bash ~/carbonite/carbonite-init.sh --continue' first."
+  echo "       Run 'bash ~/.openclaw-data/carbonite/carbonite-init.sh --continue' first."
   exit 1
 fi
 
@@ -43,11 +45,13 @@ echo "==> No existing job found. Creating..."
 
 openclaw cron add \
   --name "$JOB_NAME" \
-  --cron "0 */4 * * *" \
+  --cron "0 0,12 * * *" \
   --tz "America/New_York" \
   --session isolated \
   --message "Run this shell command and report the output: $BACKUP_CMD" \
-  --light-context
+  --light-context \
+  --channel "$DELIVERY_CHANNEL" \
+  --to "$DELIVERY_TO"
 
 echo ""
 echo "==> Verifying cron job..."

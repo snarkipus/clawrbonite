@@ -14,7 +14,9 @@
 
 set -euo pipefail
 
-cd ~
+CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+
+cd "$CARBONITE_REPO_ROOT"
 
 ACTION="${1:-status}"
 

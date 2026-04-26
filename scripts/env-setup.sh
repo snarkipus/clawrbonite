@@ -1,16 +1,23 @@
 #!/bin/bash
-# env-setup — recreate ~/.env after sandbox rebuild
-# Carbonite backs up this template; the actual .env is gitignored.
+# env-setup — recreate a local Carbonite env helper after sandbox rebuild
+# Carbonite keeps this helper in the writable .openclaw-data tree.
 #
-# Usage: run once after carbonite-init.sh --continue, then fill in tokens.
+# Usage: run once after carbonite-init.sh --continue, then edit/source it as needed.
 
 set -euo pipefail
 
-cat > ~/.env << 'EOF'
-# Sandbox environment secrets — NOT tracked by Carbonite
-# Fill in values after rebuild
-export GITHUB_TOKEN=""
+ENV_HELPER="$HOME/.openclaw-data/carbonite/env.sh"
+mkdir -p "$(dirname "$ENV_HELPER")"
+
+cat > "$ENV_HELPER" << 'EOF'
+# Carbonite local env helper — source manually when needed.
+# Provider-backed credentials such as GITHUB_TOKEN should normally come from
+# the current sandbox runtime rather than being copied here from old restores.
+# If provider-backed git transport is broken, you can temporarily uncomment the
+# next line so Carbonite backup/init uses a one-shot in-memory git auth header.
+# export GITHUB_TOKEN="github_pat_..."
 export SEARXNG_URL="http://host.openshell.internal:8888"
 EOF
 
-echo "Created ~/.env — edit it to add your tokens, then: source ~/.bashrc"
+echo "Created $ENV_HELPER"
+echo "Source it manually when needed: . $ENV_HELPER"

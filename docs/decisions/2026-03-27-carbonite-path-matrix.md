@@ -34,6 +34,7 @@ OpenClaw assistant across sandbox rebuilds.
 | `.openclaw/cron/` or `.openclaw-data/cron/` | preserve | Scheduled jobs are part of assistant continuity |
 | `.openclaw/memory/*.sqlite` | recreate | Rebuildable local memory-search index; continuity survives from workspace/session state and the DB can be regenerated |
 | `.openclaw-data/agents/*/agent/models.json` | preserve | Generic runtime model metadata for the routed provider view; observed content is not secret-bearing |
+| `.openclaw-data/canvas/`, `flows/`, `hooks/`, `media/`, `qmd/`, `sandbox/`, `skills/`, `tasks/`, `telegram/`, `wiki/` | preserve | Writable assistant/runtime state roots that may hold user-visible continuity data or mutable assistant behavior |
 | Nested workspace `.git` history via `.carbonite.bundle*` | preserve | Needed to reconstruct OpenClaw-managed repos |
 | Durable user-authored workspace docs such as `SOUL.md`, `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` | preserve | Assistant behavior/state, not platform bootstrap |
 | `.openclaw/openclaw.json` | recreate | Version-specific runtime/bootstrap config; not stable continuity state |
@@ -42,15 +43,18 @@ OpenClaw assistant across sandbox rebuilds.
 | Host `~/.nemoclaw/` state | recreate | Host-side control-plane state, outside Carbonite archive scope |
 | OpenShell gateway/provider/policy objects | recreate | Platform wiring managed by onboard/init flows |
 | Network policy entries and gateway container patches | recreate | Host/platform concerns, not sandbox continuity state |
-| `~/carbonite/` sandbox helper scripts and wrappers | preserve | Carbonite tooling and adjacent sandbox helpers belong together as part of practical operator continuity |
-| `~/carbonite/bin/carbonite-backup`, `~/carbonite/bin/carbonite-bundle`, `~/carbonite/bin/env-setup` | preserve | Canonical source remains `clawrbonite`, but preserving installed copies improves restore continuity and keeps existing sandbox workflows intact |
-| Downloaded third-party binaries or package-managed tools under `~/carbonite/bin/` | exclude or recreate | Preserve authored helpers, but do not treat easily reprovisioned binaries as continuity state by default |
-| `~/.bashrc`, `~/.profile`, `~/.gitconfig` intentional sandbox customizations | preserve | Shell and git behavior may be required for the restored sandbox to behave as the operator expects |
+| `~/.openclaw-data/carbonite/` sandbox helper scripts and wrappers | preserve | Current NemoClaw runtime leaves `.openclaw-data` writable even when `/sandbox` root is effectively read-only |
+| `~/.openclaw-data/carbonite/bin/carbonite-backup`, `~/.openclaw-data/carbonite/bin/carbonite-bundle`, `~/.openclaw-data/carbonite/bin/env-setup` | preserve | Canonical source remains `clawrbonite`, but preserving installed copies improves restore continuity and keeps existing sandbox workflows intact |
+| Downloaded third-party binaries or package-managed tools under `~/.openclaw-data/carbonite/bin/` | exclude or recreate | Preserve authored helpers, but do not treat easily reprovisioned binaries as continuity state by default |
+| `~/.bashrc`, `~/.profile`, `~/.gitconfig` intentional sandbox customizations | recreate or exclude | Current NemoClaw runtime pre-bakes and manages these read-only shell surfaces, so Carbonite should not assume it can restore or mutate them |
 | `skills/`, `.clawhub/`, package installs, downloaded binaries | exclude | Reproducible and often version-specific |
-| `.git-credentials`, identity files, auth profiles, device auth tokens | exclude | Secrets and auth state |
+| `.git-credentials`, gh auth helper files, identity files, auth profiles, device auth tokens | exclude | Secrets and auth state |
+| `.openclaw-data/credentials/` | exclude | Runtime credential store / provider resolution state, not continuity content |
+| `.openclaw-data/exec-approvals.json` | exclude | Operational approval state tied to the current sandbox security boundary |
 | `.openclaw/identity/`, `.openclaw-data/identity/`, `.openclaw-data/devices/` | exclude | Sensitive device/auth state |
 | `.openclaw-data/update-check.json` | exclude | Update bookkeeping, not continuity state |
-| `.openclaw/cache/`, `snapshots/`, `completions/`, npm/cache directories | exclude | Large transient caches |
+| `.openclaw-data/plugin-runtime-deps/`, `.openclaw/cache/`, `snapshots/`, `completions/`, npm/cache directories | exclude | Large transient/runtime-install caches |
+| `.openclaw-data/logs/`, `openclaw.json.bak-*` | exclude | Diagnostics or host-side config patch residue, not continuity state |
 | Logs, temp files, forwarded ports, running processes | diagnostic-only | Useful for troubleshooting, not for archive restore |
 | OpenClaw/OpenShell/NemoClaw version metadata | diagnostic-only | Helpful for restore diagnostics, not contract input |
 
@@ -114,10 +118,9 @@ Observed in a disposable `nemoclaw onboard` sandbox:
   in a fresh onboarded sandbox and should remain excluded as device/auth state
 - `.openclaw/logs/` may be unreadable to the sandbox user and should remain out
   of archive scope
-- the sampled archive shows sandbox helper directories, `.bashrc`, and
-  `.gitconfig` carrying
-  meaningful sandbox-side workflow customizations, so they should be preserved
-  unless narrowed by a future allowlist
+- newer NemoClaw runtimes keep `.openclaw-data` writable while shell init files
+  at `/sandbox` root can be read-only, so Carbonite helper/runtime state should
+  live under `.openclaw-data` instead of assuming writable top-level home files
 
 ## Comparison To Current Backup Behavior
 
@@ -130,12 +133,11 @@ recreated or excluded instead of preserved.
 
 Likely mismatches:
 
-- Carbonite helper scripts should live under `~/carbonite/`; preserve them, but
-  consider an allowlist later if downloaded binaries begin to mix into
-  `~/carbonite/bin/`
-- `~/.bashrc` and related shell/git config are currently backed up; this now
-  aligns with the policy when those files contain intentional sandbox
-  customizations rather than pure bootstrap defaults
+- Carbonite helper scripts should live under `~/.openclaw-data/carbonite/`;
+  preserve them, but consider an allowlist later if downloaded binaries begin
+  to mix into `~/.openclaw-data/carbonite/bin/`
+- `~/.bashrc` and related shell/git config should no longer be treated as
+  preserved continuity state under the current read-only sandbox-root model
 - `.openclaw/openclaw.json` and `.openclaw/.config-hash` appear eligible for
   capture today, but should be treated as recreate
 - `.nemoclaw/` is not currently excluded and should be treated as recreate or
@@ -152,8 +154,8 @@ Likely mismatches:
    allowlist of preserved continuity paths.
 2. Add explicit excludes for bootstrap/runtime config such as
    `.openclaw/openclaw.json`, `.openclaw/.config-hash`, and `.nemoclaw/`.
-3. Add an allowlist or review rule for `~/carbonite/bin/` if downloaded third-party
-   binaries start mixing with authored helper scripts.
+3. Add an allowlist or review rule for `~/.openclaw-data/carbonite/bin/` if
+   downloaded third-party binaries start mixing with authored helper scripts.
 4. Keep only coarse upstream version metadata in the manifest for diagnostics.
 5. Validate the matrix against a disposable onboarded sandbox before changing
    restore behavior.
