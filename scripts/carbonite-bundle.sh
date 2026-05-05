@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+CARBONITE_REPO_ROOT="$HOME/.openclaw"
 
 cd "$CARBONITE_REPO_ROOT"
 

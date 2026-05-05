@@ -16,13 +16,13 @@
 set -euo pipefail
 
 JOB_NAME="Carbonite backup"
-BACKUP_CMD="$HOME/.openclaw-data/carbonite/bin/carbonite-backup"
+BACKUP_CMD="$HOME/.openclaw/carbonite/bin/carbonite-backup"
 DELIVERY_CHANNEL="telegram"
 DELIVERY_TO="7948676994"
 
 if [ ! -x "$BACKUP_CMD" ]; then
   echo "ERROR: Expected Carbonite helper not found: $BACKUP_CMD"
-  echo "       Run 'bash ~/.openclaw-data/carbonite/carbonite-init.sh --continue' first."
+  echo "       Run 'bash ~/.openclaw/carbonite/carbonite-init.sh --continue' first."
   exit 1
 fi
 

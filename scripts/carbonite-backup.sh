@@ -13,8 +13,18 @@
 # =============================================================================
 
 set -euo pipefail
+set -E
 
-CARBONITE_REPO_ROOT="$HOME/.openclaw-data"
+on_error() {
+  local status=$?
+  local line=${1:-unknown}
+  echo "[carbonite] ERROR: Backup failed at line ${line} with status ${status}."
+  exit "$status"
+}
+
+trap 'on_error $LINENO' ERR
+
+CARBONITE_REPO_ROOT="$HOME/.openclaw"
 CARBONITE_BIN_DIR="$CARBONITE_REPO_ROOT/carbonite/bin"
 CARBONITE_ENV_HELPER="$CARBONITE_REPO_ROOT/carbonite/env.sh"
 LOCKFILE="${CARBONITE_REPO_ROOT}/.carbonite.lock"
@@ -69,18 +79,10 @@ stage_preserved_paths() {
     "agents" \
     "canvas" \
     "workspace" \
-    "cron" \
-    "flows" \
     "hooks" \
     "media" \
-    "memory" \
-    "qmd" \
-    "sandbox" \
     "skills" \
-    "tasks" \
-    "telegram" \
     "wiki" \
-    "carbonite" \
     ".gitignore"
   do
     [ -e "$path" ] || continue
@@ -89,21 +91,104 @@ stage_preserved_paths() {
 }
 
 drop_excluded_paths() {
-  git rm -r --cached --ignore-unmatch -- \
+  local -a tracked_excluded=()
+  local -a untracked_excluded=()
+  mapfile -d '' -t tracked_excluded < <(git ls-files -z --cached -- \
     "credentials" \
     "identity" \
     "devices" \
     "exec-approvals.json" \
+    ".config-hash" \
+    "openclaw.json" \
+    "openclaw.json.last-good" \
     "update-check.json" \
+    "backups" \
+    "completions" \
     "extensions" \
     "logs" \
+    "npm" \
     "plugin-runtime-deps" \
+    "carbonite" \
+    "cron" \
+    "flows" \
+    "memory" \
+    "plugins" \
+    "qmd" \
+    "sandbox" \
+    "session-delivery-queue" \
+    "tasks" \
+    "telegram" \
+    "wiki/main" \
     "openclaw.json.bak-*" \
+    "agents/*/sessions/*.bak-*" \
+    "agents/*/sessions/*.deleted.*" \
+    "agents/*/sessions/*.reset.*" \
+    "agents/*/sessions/*.lock" \
     "agents/*/qmd/xdg-cache" \
     "agents/*/qmd/xdg-config" \
     "agents/*/agent/auth-profiles.json" \
     "carbonite/.git-credentials" \
-    "carbonite/env.sh"
+    "carbonite/env.sh" \
+    "workspace/.carbonite.bundle.tar" \
+    "workspace/.openclaw/workspace-state.json" \
+    "workspace/memory/agentmail-last-check.json" \
+    "workspace/memory/heartbeat-state.json" \
+    "workspace/memory/rss-state" \
+    "workspace/memory/rsshub-upstream-state.json" \
+    "workspace/memory/wiki-watch") || true
+
+  mapfile -d '' -t untracked_excluded < <(git ls-files -z --others --exclude-standard -- \
+    "credentials" \
+    "identity" \
+    "devices" \
+    "exec-approvals.json" \
+    ".config-hash" \
+    "openclaw.json" \
+    "openclaw.json.last-good" \
+    "update-check.json" \
+    "backups" \
+    "completions" \
+    "extensions" \
+    "logs" \
+    "npm" \
+    "plugin-runtime-deps" \
+    "carbonite" \
+    "cron" \
+    "flows" \
+    "memory" \
+    "plugins" \
+    "qmd" \
+    "sandbox" \
+    "session-delivery-queue" \
+    "tasks" \
+    "telegram" \
+    "wiki/main" \
+    "openclaw.json.bak-*" \
+    "agents/*/sessions/*.bak-*" \
+    "agents/*/sessions/*.deleted.*" \
+    "agents/*/sessions/*.reset.*" \
+    "agents/*/sessions/*.lock" \
+    "agents/*/qmd/xdg-cache" \
+    "agents/*/qmd/xdg-config" \
+    "agents/*/agent/auth-profiles.json" \
+    "carbonite/.git-credentials" \
+    "carbonite/env.sh" \
+    "workspace/.carbonite.bundle.tar" \
+    "workspace/.openclaw/workspace-state.json" \
+    "workspace/memory/agentmail-last-check.json" \
+    "workspace/memory/heartbeat-state.json" \
+    "workspace/memory/rss-state" \
+    "workspace/memory/rsshub-upstream-state.json" \
+    "workspace/memory/wiki-watch") || true
+
+  if [ "${#tracked_excluded[@]}" -gt 0 ]; then
+    git rm -q -r --cached --ignore-unmatch -- "${tracked_excluded[@]}"
+    git update-index --force-remove -- "${tracked_excluded[@]}" 2>/dev/null || true
+  fi
+
+  if [ "${#untracked_excluded[@]}" -gt 0 ]; then
+    git rm -q -r --cached --ignore-unmatch -- "${untracked_excluded[@]}" || true
+  fi
 }
 
 # Freeze nested git repos into .bundle files
@@ -116,7 +201,11 @@ drop_excluded_paths
 # Check if there's anything to commit
 if git diff --cached --quiet; then
   # Nothing new to commit — but check for unpushed commits from failed pushes
-  UNPUSHED=$(git log --oneline origin/main..HEAD 2>/dev/null | wc -l)
+  if git rev-parse --verify origin/main >/dev/null 2>&1; then
+    UNPUSHED=$(git log --oneline origin/main..HEAD 2>/dev/null | wc -l)
+  else
+    UNPUSHED=0
+  fi
   if [ "$UNPUSHED" -gt 0 ]; then
     echo "[carbonite] No new changes, but ${UNPUSHED} unpushed commit(s) found. Retrying push..."
     if run_git push origin main 2>&1; then
@@ -132,7 +221,7 @@ fi
 
 # Show what changed (for logging)
 echo "[carbonite] Changes detected:"
-git diff --cached --stat
+git --no-pager diff --cached --stat
 
 # Commit locally (always succeeds if staging worked)
 git commit -m "$MSG"

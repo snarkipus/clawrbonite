@@ -13,13 +13,15 @@
 # What it does:
 #   1. Clones the configured carbonite repo to a temp directory on the host via gh
 #   2. Packages the restore tree as a tarball (preserves symlinks/layout)
-#   3. Uploads the tarball into a writable sandbox tmp directory via openshell sandbox upload
-#   4. Cleans up temp directory
+#   3. Packages trusted current restore helpers from this clawrbonite checkout
+#   4. Uploads both tarballs into a writable sandbox tmp directory via openshell sandbox upload
+#   5. Cleans up temp directory
 #
 # After upload, connect to the sandbox and run:
-#   mkdir -p ~/.openclaw-data
-#   tar -xf /tmp/carbonite-restore-upload/carbonite-restore.tar -C ~/.openclaw-data
-#   bash ~/.openclaw-data/carbonite/carbonite-init.sh --continue
+#   mkdir -p ~/.openclaw
+#   tar -xf /tmp/carbonite-restore-upload/carbonite-restore.tar -C ~/.openclaw
+#   tar -xf /tmp/carbonite-restore-upload/carbonite-restore-helpers.tar -C ~/.openclaw
+#   bash ~/.openclaw/carbonite/carbonite-init.sh --continue --no-push
 #
 # Prerequisites:
 #   - Sandbox must be running (openshell sandbox list shows it Ready)
@@ -43,7 +45,11 @@ TMPDIR="/tmp/carbonite-restore-$$"
 UPLOAD_DIR="${TMPDIR}/upload"
 ARCHIVE_NAME="carbonite-restore.tar"
 ARCHIVE_PATH="${UPLOAD_DIR}/${ARCHIVE_NAME}"
+HELPERS_ARCHIVE_NAME="carbonite-restore-helpers.tar"
+HELPERS_ARCHIVE_PATH="${UPLOAD_DIR}/${HELPERS_ARCHIVE_NAME}"
 SANDBOX_UPLOAD_DIR="/tmp/carbonite-restore-upload"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HELPER_STAGE_DIR="${TMPDIR}/helpers"
 
 echo "==> Carbonite Restore"
 echo "    Sandbox: ${SANDBOX_NAME}"
@@ -86,11 +92,22 @@ rm -rf "${TMPDIR}/carbonite/.git"
 echo "==> Packaging restore archive..."
 tar -cf "${ARCHIVE_PATH}" -C "${TMPDIR}/carbonite" .
 
+# ── Package trusted current helper overlay ─────────────────────────────────
+echo "==> Packaging trusted current helper overlay..."
+mkdir -p "${HELPER_STAGE_DIR}/carbonite/bin"
+cp -f "${SCRIPT_DIR}/carbonite-init.sh" "${HELPER_STAGE_DIR}/carbonite/carbonite-init.sh"
+cp -f "${SCRIPT_DIR}/carbonite-cron-setup.sh" "${HELPER_STAGE_DIR}/carbonite/carbonite-cron-setup.sh"
+cp -f "${SCRIPT_DIR}/carbonite-backup.sh" "${HELPER_STAGE_DIR}/carbonite/bin/carbonite-backup"
+cp -f "${SCRIPT_DIR}/carbonite-bundle.sh" "${HELPER_STAGE_DIR}/carbonite/bin/carbonite-bundle"
+cp -f "${SCRIPT_DIR}/env-setup.sh" "${HELPER_STAGE_DIR}/carbonite/bin/env-setup"
+cp -f "${SCRIPT_DIR}/websearch.sh" "${HELPER_STAGE_DIR}/carbonite/bin/websearch"
+tar -cf "${HELPERS_ARCHIVE_PATH}" -C "${HELPER_STAGE_DIR}" .
+
 # ── Upload to sandbox ──────────────────────────────────────────────────────
 echo "==> Uploading to sandbox '${SANDBOX_NAME}'..."
 echo "    Source tree: ${TMPDIR}/carbonite/"
 echo "    Archive:     ${ARCHIVE_PATH}"
-echo "    Result:      ${ARCHIVE_NAME} lands at ${SANDBOX_UPLOAD_DIR}/"
+echo "    Result:      ${ARCHIVE_NAME} and ${HELPERS_ARCHIVE_NAME} land at ${SANDBOX_UPLOAD_DIR}/"
 echo ""
 
 if ! openshell sandbox upload "${SANDBOX_NAME}" "${UPLOAD_DIR}" "${SANDBOX_UPLOAD_DIR}"; then
@@ -108,18 +125,24 @@ echo "==> Restore complete!"
 echo ""
 echo "==> Next steps (inside sandbox):"
 echo "    1. Connect:  nemoclaw ${SANDBOX_NAME} connect"
-echo "    2. Extract:  mkdir -p ~/.openclaw-data && tar -xf ${SANDBOX_UPLOAD_DIR}/${ARCHIVE_NAME} -C ~/.openclaw-data/"
-echo "    3. Verify:   ls -la ~/.openclaw-data/carbonite ~/.openclaw-data/carbonite/bin"
-echo "    4. Init:     bash ~/.openclaw-data/carbonite/carbonite-init.sh --continue"
+echo "    2. Extract:  mkdir -p ~/.openclaw && tar -xf ${SANDBOX_UPLOAD_DIR}/${ARCHIVE_NAME} -C ~/.openclaw/"
+echo "    3. Refresh:  tar -xf ${SANDBOX_UPLOAD_DIR}/${HELPERS_ARCHIVE_NAME} -C ~/.openclaw/"
+echo "    4. Verify:   ls -la ~/.openclaw/carbonite ~/.openclaw/carbonite/bin"
+echo "    5. Init:     bash ~/.openclaw/carbonite/carbonite-init.sh --continue --no-push"
 echo ""
-echo "    The --continue flag will:"
+echo "    The trusted helper overlay will:"
+echo "      - Replace stale archived restore-control helpers with the current clawrbonite versions"
+echo "      - Ensure restore control follows the current runtime root contract"
+echo ""
+echo "    The validation init will:"
 echo "      - Preserve Carbonite git history"
 echo "      - Thaw .carbonite.bundle files back to .git dirs"
 echo "      - Validate restored nested repos"
-echo "      - Install backup & bundle scripts to ~/.openclaw-data/carbonite/bin/"
-echo "      - Re-establish push to GitHub"
+echo "      - Install backup & bundle scripts to ~/.openclaw/carbonite/bin/"
+echo "      - Install trusted helper CLIs such as websearch to ~/.openclaw/carbonite/bin/"
+echo "      - Skip restore commit/push until you validate the restored state"
 echo ""
-echo "    5. Cron:     bash ~/.openclaw-data/carbonite/carbonite-cron-setup.sh"
-echo "    6. Env:      bash ~/.openclaw-data/carbonite/bin/env-setup    # optional helper template"
-echo "    7. Test:     ~/.openclaw-data/carbonite/bin/carbonite-backup 'post-restore verification'"
+echo "    6. Cron:     bash ~/.openclaw/carbonite/carbonite-cron-setup.sh"
+echo "    7. Env:      bash ~/.openclaw/carbonite/bin/env-setup    # optional helper template"
+echo "    8. Test:     ~/.openclaw/carbonite/bin/carbonite-backup 'post-restore verification'"
 echo ""
