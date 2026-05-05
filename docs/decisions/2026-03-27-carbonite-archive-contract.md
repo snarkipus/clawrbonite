@@ -33,23 +33,26 @@ For the current path-level preserve/recreate/exclude policy, see
 ## Archive Scope
 
 The `carbonite` archive should preserve only the minimum OpenClaw sandbox state
-needed for continuity across rebuilds.
+needed to preserve the runtime's essence across rebuilds.
 
 Primary examples:
 
-- OpenClaw agent state and sessions
-- OpenClaw workspace content
-- OpenClaw cron/job definitions
-- frozen nested-repo state needed to reconstruct workspace git repos
-- small operator-managed shell customizations that are part of the sandbox state
+- OpenClaw identity/persona-bearing state and sessions
+- OpenClaw workspace content and creative output
+- low-risk markdown skill content when it carries durable agent instructions
+- memory notes and derived user-authored artifacts that represent the assistant's
+  remembered experience rather than generated runtime substrate
+- frozen nested-repo state needed to reconstruct preserved workspace git repos
 
 The archive should not become a general snapshot of version-specific platform
-setup around NemoClaw, OpenShell, or host bootstrap flows.
+setup around NemoClaw, OpenShell, host bootstrap flows, or the broader runtime's
+operational substrate.
 
-This does not exclude intentional sandbox-side helper scripts or shell/git
-customizations when they are part of the operator's day-to-day workflow inside
-the sandbox. Those may still be preserved as continuity state even if their
-canonical source lives elsewhere.
+When a path primarily captures transport state, task execution state, plugin
+installation bookkeeping, generated indexes, or other operational substrate, it
+belongs outside Carbonite even if it lives under writable assistant state roots.
+Those broader state captures should instead be handled by deliberate runtime
+imaging or snapshot workflows.
 
 ## Explicit Exclusions By Intent
 
@@ -60,6 +63,10 @@ decision explicitly opts them in:
 - OpenShell or gateway bootstrap scripts that can be reprovisioned
 - host-specific patches, policies, or deployment wiring
 - transient caches, package installs, and downloaded tooling
+- messaging transport offsets and delivery substrate
+- forensic/repair-only session backup copies
+- task execution state, scheduler run history, and operational registries
+- plugin install ledgers and generated memory/index databases
 - compatibility shims added only to bridge one upstream release to another
 
 If something is reproducible from current tooling or from the base environment,

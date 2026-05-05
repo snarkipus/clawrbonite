@@ -6,8 +6,8 @@
 ## Overview
 
 Carbonite is a git-based backup system for the ephemeral OpenClaw sandbox. It
-preserves continuity-critical OpenClaw state (agent runtime state, sessions,
-workspace, memory, cron jobs, and sandbox helper customizations) across the
+preserves continuity-critical OpenClaw state (identity, sessions, workspace,
+memories, and creative output) across the
 frequent tear-down/rebuild cycles driven by alpha-era NemoClaw and OpenShell
 commit velocity.
 
@@ -28,9 +28,9 @@ rebuild, you restore from the last backup into a clean sandbox.
 - Sandbox GitHub HTTPS may run through OpenShell TLS termination; when
   `/etc/openshell-tls/openshell-ca.pem` is present, sandbox `git` should trust
   that CA for `github.com`
-- Current NemoClaw sandboxes may treat `/sandbox` root as effectively read-only
-  for the sandbox user even when `~/.openclaw-data` remains writable; Carbonite
-  therefore keeps its writable repo/helpers under `~/.openclaw-data`
+- Current NemoClaw sandboxes use the canonical mutable `~/.openclaw` root for
+  assistant state; Carbonite should keep its writable repo/helpers under
+  `~/.openclaw`
 
 ### Bundle Architecture
 
@@ -64,36 +64,58 @@ RESTORE (thaw):
 
 ## What's Backed Up
 
-- `.openclaw-data/agents/` — agent runtime state, `models.json`, sessions,
-  `sessions.json`
-- `.openclaw-data/workspace/` — SOUL.md, AGENTS.md, IDENTITY.md, USER.md,
-  MEMORY.md, daily memory notes, and other user-authored workspace files
-- `.openclaw-data/cron/` — scheduled job definitions and run history
-- `.openclaw-data/memory/` — canonical OpenClaw memory database state
-- `.openclaw-data/carbonite/` — sandbox Carbonite scripts and helper tools,
-  including `.openclaw-data/carbonite/bin/`
-- `.openclaw-data/canvas/`, `flows/`, `hooks/`, `media/`, `qmd/`, `sandbox/`,
-  `skills/`, `tasks/`, `telegram/`, and `wiki/` when present as mutable
-  assistant/runtime state
+- `.openclaw/agents/` — agent runtime state, sessions, and continuity-bearing
+  assistant history
+- `.openclaw/workspace/` — SOUL.md, AGENTS.md, DREAMS.md, HEARTBEAT.md,
+  IDENTITY.md, USER.md, MEMORY.md, daily memory notes, dream corpus/diary
+  artifacts, and other user-authored workspace files
+- `.openclaw/canvas/`, `hooks/`, `media/`, and `skills/` — creative,
+  assistant-authored, or markdown-based instruction content when present
 - `.carbonite.bundle` files — frozen snapshots of nested git repo state
 
 ## What's Excluded
 
 - All nested `.git` directories (archived as `.carbonite.bundle` instead)
 - Credentials (`identity/`, `auth-profiles.json`)
-- Device/pairing state (`.openclaw-data/devices/`, `.openclaw-data/identity/`)
-- `.openclaw-data/credentials/` — runtime credential store and provider wiring
-- `.openclaw-data/exec-approvals.json` — operational approval state, not
+- Device/pairing state (`.openclaw/devices/`, `.openclaw/identity/`)
+- `.openclaw/credentials/` — runtime credential store and provider wiring
+- `.openclaw/exec-approvals.json` — operational approval state, not
   assistant continuity
-- `.openclaw/memory/` — facade/symlink path only; preserve the canonical
-  `.openclaw-data/memory/` target instead
-- `.openclaw-data/plugin-runtime-deps/` — reproducible bundled plugin runtime
-  installs
-- `.openclaw-data/agents/*/qmd/xdg-cache/` and `xdg-config/` — QMD runtime
+- `.openclaw/npm/` — generated runtime install state
+- `.openclaw/completions/` — reproducible shell completion artifacts
+- `.openclaw/backups/` — operator repair snapshots, not continuity state
+- `.openclaw/carbonite/` — restore-control tooling now comes from the trusted
+  local `clawrbonite` checkout via helper overlay, not from archived copies
+- archived helper CLIs such as `websearch` or `ghwatch` should be treated the
+  same way: reprovision from the current trusted `clawrbonite` checkout once
+  validated for the current runtime shape, rather than preserved as archive-owned
+  continuity content
+- `.openclaw/cron/` — scheduler definitions and run state are operational
+  substrate rather than the assistant's essence
+- replaying restored `.openclaw/cron/jobs.json` is not sufficient to recreate a
+  live working OpenClaw cron schedule in a fresh runtime; re-register required
+  jobs such as the Carbonite backup job from the current helper set instead of
+  treating cron metadata as archive-owned continuity state
+- `.openclaw/flows/` — operational registry state, not durable creative output
+- `.openclaw/memory/main.sqlite` — rebuildable memory/runtime DB state
+- `.openclaw/plugins/` — plugin install bookkeeping is runtime substrate and
+  collides with healthy live runtimes
+- `.openclaw/qmd/`, `.openclaw/sandbox/`, `.openclaw/session-delivery-queue/`,
+  `.openclaw/tasks/`, and `.openclaw/telegram/` — runtime,
+  transport, or execution substrate rather than conversation/content continuity
+- `.openclaw/agents/*/sessions/*.bak-*` — repair/forensic session backups stay
+  out of the normal portable archive
+- `.openclaw/wiki/main/**` — wiki document content is sync-owned elsewhere and
+  should not be restored from Carbonite
+- `.openclaw/workspace/memory/agentmail-last-check.json`,
+  `heartbeat-state.json`, `rss-state/**`, `rsshub-upstream-state.json`, and
+  `wiki-watch/**` — operational cursor/checkpoint state rather than durable
+  continuity content
+- `.openclaw/agents/*/qmd/xdg-cache/` and `xdg-config/` — QMD runtime
   cache, index, and downloaded embedding model artifacts; reproducible and too
   large/noisy for the Carbonite archive
-- `.openclaw-data/logs/` — runtime diagnostics, not continuity state
-- `.openclaw-data/openclaw.json.bak-*` — host-side config patch residue
+- `.openclaw/logs/` — runtime diagnostics, not continuity state
+- `.openclaw/openclaw.json.bak-*` — host-side config patch residue
 - Bootstrap/runtime config (`.nemoclaw/`, `.openclaw/openclaw.json`,
   `.openclaw/.config-hash`)
 - Top-level home dotfiles and scaffold files (`.bashrc`, `.profile`,
@@ -101,11 +123,10 @@ RESTORE (thaw):
 - Shell history (`.bash_history`)
 - npm packages (`.npm-global/`, `node_modules/`)
 - Caches (`.openclaw/cache/`, `completions/`, `snapshots/`)
-- Update bookkeeping (`.openclaw-data/update-check.json`)
-- Skills from clawhub (`skills/` — reproducible via `clawhub install`)
+- Update bookkeeping (`.openclaw/update-check.json`)
 - Chromium / browser artifacts
 - Carbonite lock file (`.carbonite.lock`)
-- Carbonite local env helpers (`.openclaw-data/carbonite/env.sh`) and any
+- Carbonite local env helpers (`.openclaw/carbonite/env.sh`) and any
   legacy auth helper files from older Carbonite layouts
 
 ---
@@ -115,8 +136,8 @@ RESTORE (thaw):
 ### Step 1: Upload scripts to sandbox
 
 ```bash
-openshell sandbox upload my-assistant ./scripts/carbonite-init.sh /sandbox/.openclaw-data/carbonite/carbonite-init.sh
-openshell sandbox upload my-assistant ./scripts/carbonite-cron-setup.sh /sandbox/.openclaw-data/carbonite/carbonite-cron-setup.sh
+openshell sandbox upload my-assistant ./scripts/carbonite-init.sh /sandbox/.openclaw/carbonite/carbonite-init.sh
+openshell sandbox upload my-assistant ./scripts/carbonite-cron-setup.sh /sandbox/.openclaw/carbonite/carbonite-cron-setup.sh
 ```
 
 ### Step 2: Run initialization
@@ -124,7 +145,7 @@ openshell sandbox upload my-assistant ./scripts/carbonite-cron-setup.sh /sandbox
 Inside the sandbox (`nemoclaw my-assistant connect`):
 
 ```bash
-bash ~/.openclaw-data/carbonite/carbonite-init.sh
+bash ~/.openclaw/carbonite/carbonite-init.sh
 ```
 
 This requires a working sandbox `gh auth status` backed by the runtime GitHub
@@ -134,20 +155,20 @@ Disposable validation against a scratch archive repo:
 
 ```bash
 CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
-  bash ~/.openclaw-data/carbonite/carbonite-init.sh
+  bash ~/.openclaw/carbonite/carbonite-init.sh
 ```
 
 ### Step 3: Set up scheduled backups
 
 ```bash
-bash ~/.openclaw-data/carbonite/carbonite-cron-setup.sh
+bash ~/.openclaw/carbonite/carbonite-cron-setup.sh
 ```
 
 ### Step 4: Verify
 
 ```bash
-~/.openclaw-data/carbonite/bin/carbonite-bundle status      # show nested repos and bundles
-~/.openclaw-data/carbonite/bin/carbonite-backup "test: initial"  # manual test
+~/.openclaw/carbonite/bin/carbonite-bundle status      # show nested repos and bundles
+~/.openclaw/carbonite/bin/carbonite-backup "test: initial"  # manual test
 git log --oneline -5                 # check commits
 openclaw cron list                   # check cron registration
 ```
@@ -175,7 +196,7 @@ runtime bootstrap. The recommended alpha-era recovery path is:
 1. tear down the old disposable sandbox
 2. run fresh `nemoclaw onboard` to scaffold the new sandbox/runtime
 3. restore the Carbonite archive into that clean sandbox
-4. run `~/.openclaw-data/carbonite/carbonite-init.sh --continue`
+4. run `~/.openclaw/carbonite/carbonite-init.sh --continue --no-push`
 5. reapply any required host-side/runtime patches
 
 Do not assume a raw Carbonite restore alone will make `openclaw` immediately
@@ -193,11 +214,11 @@ clean sandbox attached to a sane host-side NemoClaw/OpenShell environment.
   home writes, with paths such as `.openclaw-data/...` plus sibling
   `carbonite/`, `.bashrc`, and `.profile` entries at archive root.
 - Current NemoClaw runtimes are a better fit for a repo root at
-  `~/.openclaw-data`, with `carbonite/` living under that writable root.
+  `~/.openclaw`, with `carbonite/` living under that writable root.
 - Before restoring an older archive into the newer runtime model, do a one-time
   archive reshape in the checked-out archive repo:
   - hoist the contents of `.openclaw-data/` to archive root
-  - keep `carbonite/` at archive root so it restores to `~/.openclaw-data/carbonite`
+  - keep `carbonite/` at archive root so it restores to `~/.openclaw/carbonite`
   - drop top-level `.bashrc`, `.profile`, and similar home-root assumptions that
     no longer map to writable continuity state
   - refresh `.gitignore` and the bundled helper scripts from `clawrbonite`
@@ -219,23 +240,88 @@ CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git \
 
 ```bash
 # Extract the uploaded restore archive into the writable Carbonite repo root
-mkdir -p ~/.openclaw-data
-tar -xf /tmp/carbonite-restore-upload/carbonite-restore.tar -C ~/.openclaw-data
+mkdir -p ~/.openclaw
+tar -xf /tmp/carbonite-restore-upload/carbonite-restore.tar -C ~/.openclaw
 
-# Re-init with history preservation + thaw + validation
-bash ~/.openclaw-data/carbonite/carbonite-init.sh --continue
+# Overwrite archived restore-control helpers with the current trusted versions
+tar -xf /tmp/carbonite-restore-upload/carbonite-restore-helpers.tar -C ~/.openclaw
+
+# Re-init with history preservation + thaw + validation, but no archive writeback yet
+bash ~/.openclaw/carbonite/carbonite-init.sh --continue --no-push
 
 # Re-register cron job (idempotent — safe to re-run)
-bash ~/.openclaw-data/carbonite/carbonite-cron-setup.sh
+bash ~/.openclaw/carbonite/carbonite-cron-setup.sh
 
 # Recreate excluded env template if needed
-bash ~/.openclaw-data/carbonite/bin/env-setup
+bash ~/.openclaw/carbonite/bin/env-setup
 
 # Verify
-~/.openclaw-data/carbonite/bin/carbonite-bundle status
-~/.openclaw-data/carbonite/bin/carbonite-backup 'post-restore verification'
+~/.openclaw/carbonite/bin/carbonite-bundle status
+git -C ~/.openclaw/workspace rev-parse --is-inside-work-tree || true
+~/.openclaw/carbonite/bin/carbonite-backup 'post-restore verification'
 openclaw memory status --deep
 ```
+
+Important cron note:
+
+- do not rely on restored `.openclaw/cron/**` files alone as proof that the
+  active OpenClaw scheduler has the intended jobs
+- validate with `openclaw cron list`
+- if the backup cron is missing, re-run
+  `bash ~/.openclaw/carbonite/carbonite-cron-setup.sh` once the sandbox-local
+  gateway is healthy
+
+For sacrificial restore validation, do not allow `--continue` to create or push
+an archive commit before you verify the restored state. The host restore helper
+now uploads a trusted current helper overlay specifically so restore control does
+not depend on stale archived `carbonite/` scripts.
+
+This same policy should be used for operator-approved helper CLIs that are not
+part of the assistant's continuity state. If helpers such as `websearch` are
+needed after restore, prefer to ship them from the current `clawrbonite`
+checkout/helper overlay after validating their runtime assumptions, rather than
+bringing them back as Carbonite-owned archive payload.
+
+Current trusted reprovisioned helper set includes:
+
+- `~/.openclaw/carbonite/bin/carbonite-backup`
+- `~/.openclaw/carbonite/bin/carbonite-bundle`
+- `~/.openclaw/carbonite/bin/env-setup`
+- `~/.openclaw/carbonite/bin/websearch`
+
+`websearch` is a small Bash CLI that queries the OpenShell-hosted SearXNG
+sidecar, defaulting to `SEARXNG_URL=http://host.openshell.internal:8888`.
+
+On a brand new sacrificial sandbox, the first `--continue` attempt may still hit
+a GitHub network approval gate before the history clone succeeds. If that first
+attempt fails before `.git` is materialized in `~/.openclaw`, approve the
+network request and retry in the same fresh sandbox. If a partial `.git` already
+exists, discard the sandbox and retry only from a new fresh target.
+
+Validated sacrificial restore outcome on `2026-05-04` against fresh
+`my-assistant-v12`:
+
+- canonical `.openclaw` restore succeeded with `Missing after restore: 0`
+- trusted helper overlay prevented stale `.openclaw-data` restore logic from
+  running
+- `workspace/.carbonite.bundle.tar` thawed successfully back into a usable
+  nested workspace repo
+- `wiki/main/**` was absent after restore, matching the new exclusion policy
+- the remaining post-restore gaps were runtime/config replay issues rather than
+  Carbonite archive loss
+
+Validated scratch essence-only archive outcome later on `2026-05-04` against a
+fresh recreated `my-assistant-v12` using
+`CARBONITE_REPO_URL=https://github.com/snarkipus/carbonite-scratch.git`:
+
+- `carbonite-init.sh --continue --no-push` cloned scratch history successfully
+- restore integrity reported `Tracked files in last backup: 424`,
+  `Missing after restore: 0`, and `Modified after restore: 0`
+- no staged deletions remained for excluded runtime substrate such as `cron/`,
+  `flows/`, `memory/main.sqlite`, `tasks/`, `telegram/`, or archived helper
+  payloads
+- the scratch validation is the current strongest proof of the refined
+  essence-only Carbonite contract
 
 ### Post-restore QMD rebuild
 
@@ -284,7 +370,7 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
   that permits the relevant GitHub traffic.
 - If provider-backed git transport to `github.com` is still broken, Carbonite
   can fall back to a real sandbox-local `GITHUB_TOKEN` exported from
-  `~/.openclaw-data/carbonite/env.sh`. Carbonite converts that token into a
+  `~/.openclaw/carbonite/env.sh`. Carbonite converts that token into a
   one-shot Basic auth header for git operations without storing it in git
   config. Keep that token untracked, repo-scoped, and temporary.
 - Only fall back to a repo-scoped `sslVerify=false` override for disposable
@@ -294,7 +380,8 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 ### What restore proves vs. what it does not
 
 - Restore **does** preserve continuity artifacts such as session transcripts,
-  workspace memory notes, cron state, and nested workspace repo contents.
+  workspace memory notes, identity/workspace content, and nested workspace repo
+  contents.
 - Restore **does not** by itself recreate the full excluded runtime/bootstrap
   layer needed for OpenClaw to attach to that data in a fresh sandbox.
 - If restored files are present but `openclaw status --deep` or
@@ -306,11 +393,11 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 ## Manual Operations
 
 ```bash
-~/.openclaw-data/carbonite/bin/carbonite-backup                         # incremental backup
-~/.openclaw-data/carbonite/bin/carbonite-backup "pre-upgrade snapshot"  # custom message
-~/.openclaw-data/carbonite/bin/carbonite-bundle status                  # show nested repos & bundles
-~/.openclaw-data/carbonite/bin/carbonite-bundle freeze                  # manually freeze nested repos
-~/.openclaw-data/carbonite/bin/carbonite-bundle thaw                    # restore .git dirs from bundles
+~/.openclaw/carbonite/bin/carbonite-backup                         # incremental backup
+~/.openclaw/carbonite/bin/carbonite-backup "pre-upgrade snapshot"  # custom message
+~/.openclaw/carbonite/bin/carbonite-bundle status                  # show nested repos & bundles
+~/.openclaw/carbonite/bin/carbonite-bundle freeze                  # manually freeze nested repos
+~/.openclaw/carbonite/bin/carbonite-bundle thaw                    # restore .git dirs from bundles
 ```
 
 ---
@@ -342,7 +429,7 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
    across rebuild cycles.
 8. **GitHub auth is required** — Carbonite expects either a working `gh auth status`
    in the sandbox or a local `GITHUB_TOKEN` fallback in
-   `~/.openclaw-data/carbonite/env.sh`.
+   `~/.openclaw/carbonite/env.sh`.
 9. **Sandbox Git TLS depends on proxy CA trust** — If GitHub HTTPS is
    TLS-terminated by OpenShell, sandbox `git` must trust
    `/etc/openshell-tls/openshell-ca.pem`.
@@ -353,12 +440,13 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `carbonite/carbonite-init.sh` | `~/.openclaw-data/carbonite/` | One-time setup or `--continue` after restore |
-| `carbonite/carbonite-cron-setup.sh` | `~/.openclaw-data/carbonite/` | Register scheduled backup during fresh setup or after restore |
-| `carbonite/bin/carbonite-backup` | `~/.openclaw-data/carbonite/bin/` | Incremental backup with auto-freeze + lock |
-| `carbonite/bin/carbonite-bundle` | `~/.openclaw-data/carbonite/bin/` | Freeze/thaw nested git repos |
-| `carbonite/bin/env-setup` | `~/.openclaw-data/carbonite/bin/` | Recreate a local env helper after rebuild |
+| `carbonite/carbonite-init.sh` | `~/.openclaw/carbonite/` | One-time setup or `--continue` after restore |
+| `carbonite/carbonite-cron-setup.sh` | `~/.openclaw/carbonite/` | Register scheduled backup during fresh setup or after restore |
+| `carbonite/bin/carbonite-backup` | `~/.openclaw/carbonite/bin/` | Incremental backup with auto-freeze + lock |
+| `carbonite/bin/carbonite-bundle` | `~/.openclaw/carbonite/bin/` | Freeze/thaw nested git repos |
+| `carbonite/bin/websearch` | `~/.openclaw/carbonite/bin/` | Trusted SearXNG sidecar query helper reprovisioned from `clawrbonite` |
+| `carbonite/bin/env-setup` | `~/.openclaw/carbonite/bin/` | Recreate a local env helper after rebuild |
 | `carbonite-restore.sh` | Host only | Restore sandbox from GitHub backup |
-| `.gitignore` | `~/.openclaw-data/` (written by init) | Exclusion rules |
+| `.gitignore` | `~/.openclaw/` (written by init) | Exclusion rules |
 | `.carbonite.bundle` | Next to each nested `.git` | Frozen git repo snapshot |
-| `.carbonite.lock` | `~/.openclaw-data/` (runtime) | Prevents concurrent backups |
+| `.carbonite.lock` | `~/.openclaw/` (runtime) | Prevents concurrent backups |

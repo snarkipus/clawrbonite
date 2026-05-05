@@ -31,23 +31,36 @@ OpenClaw assistant across sandbox rebuilds.
 | Opaque but generic OpenClaw runtime state under `.openclaw/agents/` or `.openclaw-data/` that supports normal operation | preserve | Preserve when it appears to be assistant/runtime continuity state rather than bootstrap or secrets |
 | `.openclaw/workspace/` user content | preserve | Primary user/agent workspace content |
 | `.openclaw-data/workspace/` | preserve | Backing writable workspace state; may be canonical behind symlinks |
-| `.openclaw/cron/` or `.openclaw-data/cron/` | preserve | Scheduled jobs are part of assistant continuity |
-| `.openclaw/memory/*.sqlite` | recreate | Rebuildable local memory-search index; continuity survives from workspace/session state and the DB can be regenerated |
+| `.openclaw/cron/` or `.openclaw-data/cron/` | exclude | Scheduler definitions and run state are operational substrate, not the assistant's essence |
+| `.openclaw/memory/*.sqlite` | exclude | Rebuildable local memory-search/runtime DB; continuity survives from workspace/session state and the DB can be regenerated |
 | `.openclaw-data/agents/*/agent/models.json` | preserve | Generic runtime model metadata for the routed provider view; observed content is not secret-bearing |
-| `.openclaw-data/canvas/`, `flows/`, `hooks/`, `media/`, `qmd/`, `sandbox/`, `skills/`, `tasks/`, `telegram/`, `wiki/` | preserve | Writable assistant/runtime state roots that may hold user-visible continuity data or mutable assistant behavior |
+| `.openclaw-data/canvas/`, `hooks/`, `media/` | preserve | Creative and assistant-authored output belongs to the runtime's preserved essence |
+| `.openclaw/skills/`, `.openclaw-data/skills/` | preserve | Markdown-based skill instructions are low-risk portable authored content even when some skills are installed rather than created locally |
+| `.openclaw/flows/`, `.openclaw-data/flows/` | exclude | Operational registry state, not durable identity/memory/creative output |
+| `.openclaw/qmd/`, `.openclaw-data/qmd/` | exclude | Generated retrieval/index substrate rather than durable content |
+| `.openclaw/sandbox/`, `.openclaw-data/sandbox/` | exclude | Runtime substrate, not preserved character/work |
+| `.openclaw/tasks/`, `.openclaw-data/tasks/` | exclude | Task execution DB state is operational substrate |
+| `.openclaw/telegram/`, `.openclaw-data/telegram/` | exclude | Messaging transport offsets are substrate; conversation continuity already lives in session history |
+| `.openclaw/plugins/`, `.openclaw-data/plugins/` | exclude | Plugin install bookkeeping collides with healthy live runtimes and is not the assistant's essence |
+| `.openclaw/wiki/main/**` | exclude | Wiki document content is bidirectionally synced through a separate system and should not gain a second restoration authority through Carbonite |
+| `.openclaw/agents/*/sessions/*.bak-*` | exclude | Repair/forensic session backups are out of scope for the normal portable archive |
 | Nested workspace `.git` history via `.carbonite.bundle*` | preserve | Needed to reconstruct OpenClaw-managed repos |
-| Durable user-authored workspace docs such as `SOUL.md`, `AGENTS.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` | preserve | Assistant behavior/state, not platform bootstrap |
+| Durable user-authored workspace docs such as `SOUL.md`, `AGENTS.md`, `DREAMS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md` | preserve | Assistant behavior/state, not platform bootstrap |
+| `.openclaw/workspace/memory/*.md` | preserve | Human-readable memory/continuity notes are part of the assistant's remembered experience |
+| `.openclaw/workspace/memory/.dreams/**`, `.openclaw/workspace/memory/dreaming/**` | preserve | Dream diary, corpus, and derived reflective artifacts are continuity content rather than runtime substrate |
+| `.openclaw/workspace/memory/agentmail-last-check.json`, `heartbeat-state.json`, `rss-state/**`, `rsshub-upstream-state.json`, `wiki-watch/**` | exclude | Operational cursor/checkpoint state; useful to current automation loops, but not durable continuity worth restoring onto a healthy runtime |
 | `.openclaw/openclaw.json` | recreate | Version-specific runtime/bootstrap config; not stable continuity state |
 | `.openclaw/.config-hash` | recreate | Derived bootstrap/runtime artifact |
 | `.nemoclaw/` inside sandbox | recreate | NemoClaw onboarding/bootstrap metadata |
 | Host `~/.nemoclaw/` state | recreate | Host-side control-plane state, outside Carbonite archive scope |
 | OpenShell gateway/provider/policy objects | recreate | Platform wiring managed by onboard/init flows |
 | Network policy entries and gateway container patches | recreate | Host/platform concerns, not sandbox continuity state |
-| `~/.openclaw-data/carbonite/` sandbox helper scripts and wrappers | preserve | Current NemoClaw runtime leaves `.openclaw-data` writable even when `/sandbox` root is effectively read-only |
-| `~/.openclaw-data/carbonite/bin/carbonite-backup`, `~/.openclaw-data/carbonite/bin/carbonite-bundle`, `~/.openclaw-data/carbonite/bin/env-setup` | preserve | Canonical source remains `clawrbonite`, but preserving installed copies improves restore continuity and keeps existing sandbox workflows intact |
+| `~/.openclaw/carbonite/` sandbox helper scripts and wrappers | exclude | Restore-control tooling now comes from the trusted current `clawrbonite` checkout via helper overlay rather than archived copies |
+| `~/.openclaw/carbonite/bin/carbonite-backup`, `~/.openclaw/carbonite/bin/carbonite-bundle`, `~/.openclaw/carbonite/bin/env-setup` | exclude | Canonical source is the current trusted tooling checkout; archived copies are a stale-restore hazard |
+| Trusted reprovisioned helper CLIs such as `websearch` or `ghwatch` under `~/.openclaw/carbonite/bin/` | recreate | These helpers may be useful operator/agent tools, but they should come from the current trusted `clawrbonite` checkout after runtime-shape validation rather than from archived history |
 | Downloaded third-party binaries or package-managed tools under `~/.openclaw-data/carbonite/bin/` | exclude or recreate | Preserve authored helpers, but do not treat easily reprovisioned binaries as continuity state by default |
 | `~/.bashrc`, `~/.profile`, `~/.gitconfig` intentional sandbox customizations | recreate or exclude | Current NemoClaw runtime pre-bakes and manages these read-only shell surfaces, so Carbonite should not assume it can restore or mutate them |
-| `skills/`, `.clawhub/`, package installs, downloaded binaries | exclude | Reproducible and often version-specific |
+| `.clawhub/`, package installs, downloaded binaries, and non-authored skill runtime artifacts | exclude | Reproducible and often version-specific; keep markdown skill content separately under the skills preserve rule above |
 | `.git-credentials`, gh auth helper files, identity files, auth profiles, device auth tokens | exclude | Secrets and auth state |
 | `.openclaw-data/credentials/` | exclude | Runtime credential store / provider resolution state, not continuity content |
 | `.openclaw-data/exec-approvals.json` | exclude | Operational approval state tied to the current sandbox security boundary |
