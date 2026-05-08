@@ -999,7 +999,7 @@ if [ "$CONTINUE_MODE" = true ]; then
       echo "    No staged restore delta relative to archive history."
     else
       echo "    Staged restore delta preserved locally for inspection:"
-      git diff --cached --stat
+      git diff --cached --stat || echo "    WARN: Could not print staged restore delta stat; continuing because this is validation-only output."
     fi
     echo "    Skipping restore commit and remote push."
     echo "    If validation passes later, run ~/.openclaw/carbonite/bin/carbonite-backup manually to create the next archive commit."
