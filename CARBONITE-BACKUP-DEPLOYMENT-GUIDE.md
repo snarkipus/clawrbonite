@@ -289,6 +289,33 @@ Current trusted reprovisioned helper set includes:
 - `~/.openclaw/carbonite/bin/env-setup`
 - `~/.openclaw/carbonite/bin/websearch`
 
+When sandbox git transport cannot authenticate directly even though host GitHub
+auth is healthy, use the host-assisted sync helper from the `clawrbonite`
+checkout instead of putting a materialized PAT in the sandbox:
+
+```bash
+bash scripts/carbonite-host-sync.sh my-assistant
+```
+
+This downloads the sandbox `~/.openclaw` git history as a bundle, imports it into
+a host clone, fast-forwards the configured archive branch, and pushes from the
+host. It does not create a backup commit by itself; run it after a sandbox-local
+`carbonite-backup` has created or preserved a local commit.
+
+For the normal cron-backed model, prefer provisioning sandbox-local git auth with
+a materialized token from the host:
+
+```bash
+GH_PAT=ghp_... bash scripts/carbonite-provision-auth.sh my-assistant
+```
+
+`carbonite-restore.sh` also includes this helper automatically when `GH_PAT` or a
+materialized `GITHUB_TOKEN` is set in the host environment. The generated
+`~/.openclaw/carbonite/env.sh` is excluded from Carbonite backups, has mode
+`0600`, and is sourced by `carbonite-init.sh` and `carbonite-backup` for git
+transport. Do not use an `openshell:resolve:env:*` placeholder for this path;
+git HTTPS needs the materialized token.
+
 `websearch` is a small Bash CLI that queries the OpenShell-hosted SearXNG
 sidecar, defaulting to `SEARXNG_URL=http://host.openshell.internal:8888`.
 
@@ -398,6 +425,13 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 ~/.openclaw/carbonite/bin/carbonite-bundle status                  # show nested repos & bundles
 ~/.openclaw/carbonite/bin/carbonite-bundle freeze                  # manually freeze nested repos
 ~/.openclaw/carbonite/bin/carbonite-bundle thaw                    # restore .git dirs from bundles
+```
+
+If the sandbox backup commit succeeds but push fails because sandbox git cannot
+authenticate, run this from the host:
+
+```bash
+bash scripts/carbonite-host-sync.sh my-assistant
 ```
 
 ---

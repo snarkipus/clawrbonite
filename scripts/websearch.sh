@@ -31,8 +31,18 @@ if [ -z "$QUERY" ]; then
   exit 1
 fi
 
-ENCODED=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$QUERY")
-RESULT=$(curl -fsS --max-time 15 "${SEARXNG_URL}/search?q=${ENCODED}&format=json&categories=${CATEGORY}")
+RESULT=$(python3 -c '
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+base_url, query, category = sys.argv[1:4]
+params = urllib.parse.urlencode({"q": query, "format": "json", "categories": category})
+url = f"{base_url.rstrip("/")}/search?{params}"
+with urllib.request.urlopen(url, timeout=15) as response:
+    sys.stdout.write(response.read().decode("utf-8"))
+' "$SEARXNG_URL" "$QUERY" "$CATEGORY")
 
 python3 -c '
 import json, sys

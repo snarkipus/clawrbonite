@@ -51,6 +51,7 @@ CARBONITE_HOME="$CARBONITE_REPO_ROOT/carbonite"
 CARBONITE_BIN_DIR="$CARBONITE_HOME/bin"
 CARBONITE_GITIGNORE="$CARBONITE_REPO_ROOT/.gitignore"
 CARBONITE_ENV_HELPER="$CARBONITE_HOME/env.sh"
+CARBONITE_LOCAL_HISTORY_TAR="${CARBONITE_LOCAL_HISTORY_TAR:-/tmp/carbonite-restore-upload/carbonite-history.tar}"
 
 # Parse flags
 for arg in "$@"; do
@@ -868,8 +869,17 @@ if [ -z "$QUERY" ]; then
   exit 1
 fi
 
-ENCODED=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$QUERY")
-RESULT=$(curl -fsS --max-time 15 "${SEARXNG_URL}/search?q=${ENCODED}&format=json&categories=${CATEGORY}")
+RESULT=$(python3 -c '
+import sys
+import urllib.parse
+import urllib.request
+
+base_url, query, category = sys.argv[1:4]
+params = urllib.parse.urlencode({"q": query, "format": "json", "categories": category})
+url = f"{base_url.rstrip("/")}/search?{params}"
+with urllib.request.urlopen(url, timeout=15) as response:
+    sys.stdout.write(response.read().decode("utf-8"))
+' "$SEARXNG_URL" "$QUERY" "$CATEGORY")
 
 python3 -c '
 import json, sys
@@ -927,7 +937,22 @@ echo "==> Initializing Carbonite repo in $(pwd)..."
 
 if [ "$CONTINUE_MODE" = true ]; then
   echo "    --continue mode: cloning existing history..."
-  if run_git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null; then
+  if [ -f "$CARBONITE_LOCAL_HISTORY_TAR" ]; then
+    echo "    Using uploaded local Carbonite history: ${CARBONITE_LOCAL_HISTORY_TAR}"
+    HISTORY_TMP="/tmp/carbonite-history.$$"
+    rm -rf "$HISTORY_TMP"
+    mkdir -p "$HISTORY_TMP"
+    tar -xf "$CARBONITE_LOCAL_HISTORY_TAR" -C "$HISTORY_TMP"
+    if [ ! -d "$HISTORY_TMP/carbonite-history.git" ]; then
+      echo "ERROR: Uploaded Carbonite history archive did not contain carbonite-history.git."
+      exit 1
+    fi
+    mv "$HISTORY_TMP/carbonite-history.git" .git
+    rm -rf "$HISTORY_TMP"
+    git config --unset core.bare
+    git reset HEAD -- . 2>/dev/null || true
+    echo "    Existing history preserved ($(git rev-list --count HEAD 2>/dev/null || echo 0) commits)"
+  elif run_git clone --bare "${REPO_URL}" /tmp/carbonite-bare.$$ 2>/dev/null; then
     mv /tmp/carbonite-bare.$$ .git
     git config --unset core.bare
     git reset HEAD -- . 2>/dev/null || true
@@ -953,7 +978,10 @@ if [ "$CONTINUE_MODE" = true ]; then
     if [ "$MISSING" -gt 0 ]; then
       echo ""
       echo "    WARN: Missing files (may be expected if sandbox image differs):"
-      git ls-files --deleted 2>/dev/null | head -20 | sed 's/^/      /'
+      MISSING_LIST="/tmp/carbonite-missing.$$"
+      git ls-files --deleted > "$MISSING_LIST" 2>/dev/null || true
+      sed -n '1,20p' "$MISSING_LIST" | sed 's/^/      /'
+      rm -f "$MISSING_LIST"
       REMAINING=$((MISSING - 20))
       if [ "$REMAINING" -gt 0 ]; then
         echo "      ... and ${REMAINING} more"
