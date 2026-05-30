@@ -608,6 +608,7 @@ cat > "$CARBONITE_BIN_DIR/carbonite-backup" << 'BACKUP_SCRIPT'
 # Usage:
 #   carbonite-backup                    # auto-generated commit message
 #   carbonite-backup "manual snapshot"  # custom commit message
+#   carbonite-backup --help             # show usage
 # =============================================================================
 
 set -euo pipefail
@@ -626,6 +627,55 @@ CARBONITE_REPO_ROOT="$HOME/.openclaw"
 CARBONITE_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARBONITE_ENV_HELPER="$CARBONITE_REPO_ROOT/carbonite/env.sh"
 LOCKFILE="${CARBONITE_REPO_ROOT}/.carbonite.lock"
+MSG=""
+
+print_usage() {
+  cat <<'USAGE'
+Usage:
+  carbonite-backup
+  carbonite-backup "manual snapshot label"
+  carbonite-backup --help
+
+Creates an incremental Carbonite backup. With no label, the commit message is
+generated automatically. Labels must be a single non-empty argument and cannot
+start with '-'.
+USAGE
+}
+
+parse_args() {
+  if [ "$#" -eq 0 ]; then
+    MSG="carbonite: scheduled backup $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    return 0
+  fi
+
+  if [ "$#" -ne 1 ]; then
+    echo "[carbonite] ERROR: Expected at most one backup label." >&2
+    print_usage >&2
+    exit 2
+  fi
+
+  case "$1" in
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    "")
+      echo "[carbonite] ERROR: Backup label cannot be empty." >&2
+      print_usage >&2
+      exit 2
+      ;;
+    -*)
+      echo "[carbonite] ERROR: Unknown option or invalid backup label: $1" >&2
+      print_usage >&2
+      exit 2
+      ;;
+    *)
+      MSG="$1"
+      ;;
+  esac
+}
+
+parse_args "$@"
 
 # ── Acquire exclusive lock (fail immediately if another run is active) ──────
 exec 9>"$LOCKFILE"
@@ -635,8 +685,6 @@ if ! flock -n 9; then
 fi
 
 cd "$CARBONITE_REPO_ROOT"
-
-MSG="${1:-carbonite: scheduled backup $(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
 source_carbonite_env() {
   if [ -f "$CARBONITE_ENV_HELPER" ]; then

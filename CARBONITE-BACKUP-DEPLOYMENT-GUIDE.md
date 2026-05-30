@@ -422,10 +422,14 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 ```bash
 ~/.openclaw/carbonite/bin/carbonite-backup                         # incremental backup
 ~/.openclaw/carbonite/bin/carbonite-backup "pre-upgrade snapshot"  # custom message
+~/.openclaw/carbonite/bin/carbonite-backup --help                  # usage only; no backup
 ~/.openclaw/carbonite/bin/carbonite-bundle status                  # show nested repos & bundles
 ~/.openclaw/carbonite/bin/carbonite-bundle freeze                  # manually freeze nested repos
 ~/.openclaw/carbonite/bin/carbonite-bundle thaw                    # restore .git dirs from bundles
 ```
+
+Backup labels must be one non-empty argument and cannot start with `-`; invalid
+arguments fail before Carbonite freezes bundles, stages files, commits, or pushes.
 
 If the sandbox backup commit succeeds but push fails because sandbox git cannot
 authenticate, run this from the host:
