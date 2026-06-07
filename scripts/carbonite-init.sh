@@ -138,6 +138,10 @@ run_git() {
   git "${args[@]}" "$@"
 }
 
+normalize_origin_remote() {
+  git remote add origin "${REPO_URL}" 2>/dev/null || git remote set-url origin "${REPO_URL}"
+}
+
 source_carbonite_env
 
 # ── Git identity ────────────────────────────────────────────────────────────
@@ -1010,6 +1014,8 @@ if [ "$CONTINUE_MODE" = true ]; then
     echo "       Verify GitHub auth/network approval first, then discard this sandbox and retry in a fresh one."
     exit 1
   fi
+
+  normalize_origin_remote
 
   # ── Verify restore integrity ──────────────────────────────────────────────
   echo ""

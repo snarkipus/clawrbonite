@@ -366,6 +366,12 @@ materialized `GITHUB_TOKEN` is set in the host environment. The generated
 transport. Do not use an `openshell:resolve:env:*` placeholder for this path;
 git HTTPS needs the materialized token.
 
+`carbonite-init.sh --continue` normalizes the restored Carbonite git remote to
+`CARBONITE_REPO_URL` after uploaded history is materialized. This prevents a
+host-side `gh` SSH clone such as `git@github.com:snarkipus/carbonite.git` from
+becoming the sandbox cron push remote. The sandbox backup path expects HTTPS plus
+the local token helper, not SSH keys.
+
 `websearch` is a small Bash CLI that queries the OpenShell-hosted SearXNG
 sidecar, defaulting to `SEARXNG_URL=http://host.openshell.internal:8888`.
 
