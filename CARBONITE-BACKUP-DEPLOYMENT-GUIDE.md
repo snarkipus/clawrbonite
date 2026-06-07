@@ -6,23 +6,32 @@
 ## Overview
 
 Carbonite is a git-based backup system for the ephemeral OpenClaw sandbox. It
-preserves continuity-critical OpenClaw state (identity, sessions, workspace,
-memories, and creative output) across the
+preserves continuity-critical OpenClaw state (sessions, workspace, memories,
+persona/workspace content, and creative output) across the
 frequent tear-down/rebuild cycles driven by alpha-era NemoClaw and OpenShell
 commit velocity.
 
 Carbonite does **NOT** protect against pod restarts transparently — after a
-rebuild, you restore from the last backup into a clean sandbox.
+rebuild, you restore from the last backup into a freshly installed and validated
+sandbox.
 
 ### Design Assumptions
 
-- Sandbox is disposable — restore targets a **clean post-creation sandbox**
+- Sandbox is disposable, but restore targets a **freshly installed and validated
+  sandbox**, not an unvalidated first boot
 - Rebuilds are frequent (near-daily during alpha)
-- During upstream alpha churn, prefer full teardown + fresh `nemoclaw onboard`
-  before Carbonite restore rather than trying to repair a drifted runtime in
-  place
-- Host-side patches (fetch-guard, openclaw.json, network policy) are outside
-  Carbonite's scope — those require Priority 2 (custom image) to persist
+- During upstream alpha churn, prefer full teardown + fresh `nemoclaw onboard`,
+  route/channel validation, and only then Carbonite restore, rather than trying
+  to repair a drifted runtime in place
+- Runtime validation must prove the new sandbox's gateway, model route,
+  credential placeholders, policy, and any required channel/tool smokes before
+  continuity files are overlaid
+- The restore target should be a fresh runtime root that is not already a
+  Carbonite checkout: `git -C ~/.openclaw status` should fail with "not a git
+  repository" before `carbonite-init.sh --continue`
+- Host-side runtime wiring, target `openclaw.json`, OpenShell policy, credential
+  providers, and gateway/device state are outside Carbonite's scope; validate
+  those on the target before restoring continuity files
 - Some re-pairing or host-side reattachment may still be required after restore
 - GitHub CLI auth is a hard runtime dependency for Carbonite operations
 - Sandbox GitHub HTTPS may run through OpenShell TLS termination; when
@@ -177,11 +186,14 @@ openclaw cron list                   # check cron registration
 
 ## Restoring After Catastrophic Sandbox State Loss
 
-**Precondition:** Restore targets a clean, freshly created sandbox.
+**Precondition:** Restore targets a freshly installed and validated sandbox. Do
+not restore into an unvalidated first boot, and do not restore into a drifted
+runtime that has not passed the current host's route, gateway, policy, and
+channel/tool gates.
 
 This restore flow applies whenever the ephemeral OpenClaw sandbox state has been
-effectively lost and you have a sane host-side NemoClaw/OpenShell plus a fresh
-replacement sandbox target.
+effectively lost and you have a sane host-side NemoClaw/OpenShell plus a fresh,
+validated replacement sandbox target.
 
 Common causes include:
 
@@ -195,9 +207,13 @@ runtime bootstrap. The recommended alpha-era recovery path is:
 
 1. tear down the old disposable sandbox
 2. run fresh `nemoclaw onboard` to scaffold the new sandbox/runtime
-3. restore the Carbonite archive into that clean sandbox
-4. run `~/.openclaw/carbonite/carbonite-init.sh --continue --no-push`
-5. reapply any required host-side/runtime patches
+3. validate the new runtime shape before restore: gateway reachability, model
+   route, generated model catalog, credential placeholders, policy, tools, and
+   any adoption-blocking channels
+4. verify the new `~/.openclaw` is not already a Carbonite git checkout
+5. restore the Carbonite archive into that validated sandbox
+6. run `~/.openclaw/carbonite/carbonite-init.sh --continue --no-push`
+7. validate restored continuity and rerun the runtime/channel smokes
 
 Do not assume a raw Carbonite restore alone will make `openclaw` immediately
 functional in a brand new sandbox; excluded runtime/bootstrap files such as
@@ -206,7 +222,36 @@ need to come from the fresh onboarded environment.
 
 In other words, the principal cause of the loss event does not materially change
 the Carbonite restore mechanics. What matters is that restore starts from a
-clean sandbox attached to a sane host-side NemoClaw/OpenShell environment.
+validated sandbox attached to a sane host-side NemoClaw/OpenShell environment,
+with runtime substrate owned by the target runtime rather than the archive.
+
+### Required pre-restore validation
+
+Before running `carbonite-restore.sh`, prove and record the target state:
+
+```bash
+openshell sandbox list
+openshell sandbox exec -n my-assistant -- sh -lc 'git -C ~/.openclaw status'
+```
+
+The second command should fail with:
+
+```text
+fatal: not a git repository (or any of the parent directories): .git
+```
+
+Also validate the target runtime shape that must survive restore:
+
+- `openclaw status --deep --json` reports gateway reachable and health OK
+- the target `openclaw.json` and `.config-hash` match
+- generated agent `models.json` matches the live model/provider config
+- model route, proxy, policy, and credential-placeholder behavior are the current
+  target runtime's validated shape
+- required native tools and adoption-blocking channels pass bounded smokes
+
+Do not proceed if validation requires replacing `openclaw.json`, copying source
+identity/device/credential state, or restoring source cron/session-delivery
+runtime state as a workaround.
 
 ### Archive layout note for older Carbonite snapshots
 
@@ -261,6 +306,11 @@ git -C ~/.openclaw/workspace rev-parse --is-inside-work-tree || true
 ~/.openclaw/carbonite/bin/carbonite-backup 'post-restore verification'
 openclaw memory status --deep
 ```
+
+For an already validated target, do not run `carbonite-backup 'post-restore
+verification'` or register cron until after post-restore validation passes. The
+initial restore should use `--no-push` so no archive commit is created before the
+operator reviews the restored state.
 
 Important cron note:
 
@@ -371,12 +421,22 @@ workspace/wiki content is in place, verify memory status and rebuild QMD if the
 index is empty, stale, or missing expected collections. Record that rebuild in
 handoff notes when it was required.
 
-### Host-side patches still needed (until Priority 2 custom image):
+### Runtime state that must remain target-owned
 
-1. **Fetch-guard patch** — `docker exec` sed commands (session notes Step 3)
-2. **openclaw.json web config** — `docker cp` (session notes Step 4)
-3. **Network policy** — `openshell policy set` (session notes Step 5)
-4. **Gateway restart inside sandbox** — kill old process, `openclaw gateway &`
+Current restores should preserve the freshly validated target runtime shape. Do
+not replace these from the Carbonite archive or an older source sandbox:
+
+- `~/.openclaw/openclaw.json` and `~/.openclaw/.config-hash`
+- `~/.openclaw/devices/`, `~/.openclaw/identity/`, and
+  `~/.openclaw/credentials/`
+- `~/.openclaw/cron/`, `~/.openclaw/session-delivery-queue/`, and channel
+  transport/runtime directories
+- host-side OpenShell providers, policies, gateway selection, and credential
+  placeholder wiring
+
+If a current target needs a host-side or runtime patch before restore, apply and
+validate that patch before running Carbonite. Carbonite should not be used to
+carry forward stale runtime substrate from an older source sandbox.
 
 ### GitHub TLS trust inside the sandbox
 
@@ -407,7 +467,7 @@ git config --global http.https://github.com/.sslCAInfo /etc/openshell-tls/opensh
 ### What restore proves vs. what it does not
 
 - Restore **does** preserve continuity artifacts such as session transcripts,
-  workspace memory notes, identity/workspace content, and nested workspace repo
+  workspace memory notes, persona/workspace content, and nested workspace repo
   contents.
 - Restore **does not** by itself recreate the full excluded runtime/bootstrap
   layer needed for OpenClaw to attach to that data in a fresh sandbox.
@@ -459,7 +519,8 @@ bash scripts/carbonite-host-sync.sh my-assistant
 2. **No transparent restore** — Manual restore + init required after rebuild.
 3. **Fresh onboard still required** — Carbonite is not a full substitute for
    `nemoclaw onboard` during upstream runtime churn.
-4. **Host-side patches not covered** — Container overlay changes are out of scope.
+4. **Target runtime substrate not covered** — host-side provider/policy/gateway
+   wiring, target config, and container overlay changes are out of scope.
 5. **Git push requires network policy** — `github` policy entry must be present.
 6. **Session data may grow** — Monitor with `du -sh ~/.openclaw/agents/main/sessions/`.
 7. **Bundle thaw is non-standard** — Post-thaw validation checks for sanity but cannot
